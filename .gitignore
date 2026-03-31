@@ -1,0 +1,23 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+*.ipr
+*.iws
+.idea/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.cursor/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
