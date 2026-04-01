@@ -4,8 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../lend_borrow_perspective.dart';
 import '../../../providers/groups_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
+import '../../groups/screens/group_expenses_screen.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/social_provider.dart';
 
@@ -94,7 +96,18 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
                             child: Text(c['display_name'] as String),
                           )),
                     ],
-                    onChanged: (v) => setSheet(() => linkedUserId = v),
+                    onChanged: (v) => setSheet(() {
+                      linkedUserId = v;
+                      if (v != null) {
+                        for (final c in connections) {
+                          if (c['other_user_id'] == v) {
+                            final dn = c['display_name'] as String?;
+                            if (dn != null && dn.isNotEmpty) nameCtrl.text = dn;
+                            break;
+                          }
+                        }
+                      }
+                    }),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -244,7 +257,8 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
     double payTotal = 0;
     for (final e in pending) {
       final amount = (e['amount'] as num?)?.toDouble() ?? 0;
-      if (e['type'] == 'lent') {
+      final t = effectiveTypeForViewer(e, uid);
+      if (t == 'lent') {
         collectTotal += amount;
       } else {
         payTotal += amount;
@@ -252,14 +266,15 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
     }
 
     final filtered = pending.where((e) {
-      if (_activeTab == 'collect') return e['type'] == 'lent';
-      return e['type'] == 'borrowed';
+      final t = effectiveTypeForViewer(e, uid);
+      if (_activeTab == 'collect') return t == 'lent';
+      return t == 'borrowed';
     }).toList();
 
     final q = _searchCtrl.text.toLowerCase();
     final displayed = q.isEmpty
         ? filtered
-        : filtered.where((e) => (e['counterparty_name'] as String? ?? '').toLowerCase().contains(q)).toList();
+        : filtered.where((e) => otherPartyDisplayName(e, uid).toLowerCase().contains(q)).toList();
 
     final outgoing = invitations.where((i) => i['from_user_id'] == uid && i['status'] == 'pending').toList();
     final incoming = invitations.where((i) => i['from_user_id'] != uid && i['status'] == 'pending').toList();
@@ -389,13 +404,28 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
                   tileColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: BillyTheme.gray100)),
                   title: Text(g['name'] as String? ?? 'Group'),
-                  subtitle: Text('${members.length} members'),
-                  trailing: connections.isNotEmpty
-                      ? IconButton(
+                  subtitle: Text('${members.length} members · tap for shared expenses'),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => GroupExpensesScreen(
+                          groupId: g['id'] as String,
+                          groupName: g['name'] as String? ?? 'Group',
+                          members: List<Map<String, dynamic>>.from(members.map((m) => Map<String, dynamic>.from(m as Map))),
+                        ),
+                      ),
+                    );
+                  },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (connections.isNotEmpty)
+                        IconButton(
                           icon: const Icon(Icons.person_add_alt_outlined),
                           onPressed: () => _pickMembersForGroup(g['id'] as String, connections),
-                        )
-                      : null,
+                        ),
+                    ],
+                  ),
                 ),
               );
             }),
@@ -442,6 +472,7 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
           const SizedBox(height: 12),
           ...displayed.map((e) => _EntryRow(
                 entry: e,
+                viewerUid: uid,
                 currencyCode: currency,
                 onSettle: () => ref.read(lendBorrowProvider.notifier).settle(e['id'] as String),
               )),
@@ -553,18 +584,26 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.entry, required this.currencyCode, required this.onSettle});
+  const _EntryRow({
+    required this.entry,
+    required this.viewerUid,
+    required this.currencyCode,
+    required this.onSettle,
+  });
   final Map<String, dynamic> entry;
+  final String? viewerUid;
   final String? currencyCode;
   final VoidCallback onSettle;
 
   @override
   Widget build(BuildContext context) {
-    final name = entry['counterparty_name'] as String? ?? '';
+    final name = otherPartyDisplayName(entry, viewerUid);
     final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
-    final type = entry['type'] as String? ?? 'lent';
-    final isLent = type == 'lent';
+    final myType = effectiveTypeForViewer(entry, viewerUid);
+    final isLent = myType == 'lent';
     final formatted = AppCurrency.format(amount, currencyCode);
+    final linked = entry['counterparty_user_id'] != null;
+    final roleLine = lendBorrowRoleLine(entry, viewerUid);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -578,7 +617,10 @@ class _EntryRow extends StatelessWidget {
             child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: BillyTheme.emerald600)),
           ),
           title: Text(name),
-          subtitle: entry['counterparty_user_id'] != null ? const Text('Linked contact', style: TextStyle(fontSize: 11)) : null,
+          subtitle: Text(
+            linked ? '$roleLine · Linked' : roleLine,
+            style: const TextStyle(fontSize: 11),
+          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

@@ -47,11 +47,16 @@ class SupabaseService {
 
   // ─── Lend / Borrow ──────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchLendBorrow() async {
-    if (_uid == null) return [];
+    final uid = _uid;
+    if (uid == null) return [];
+    // Align with RLS: creator or linked counterparty can read the row.
     final res = await _client
         .from('lend_borrow_entries')
-        .select()
-        .eq('user_id', _uid!)
+        .select(
+          '*, creator_profile:profiles!lend_borrow_entries_user_id_fkey(display_name), '
+          'counterparty_profile:profiles!lend_borrow_entries_counterparty_user_id_fkey(display_name)',
+        )
+        .or('user_id.eq.$uid,counterparty_user_id.eq.$uid')
         .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(res);
   }
@@ -220,9 +225,56 @@ class SupabaseService {
     if (_uid == null) return [];
     final res = await _client
         .from('expense_groups')
-        .select('*, expense_group_members(*)')
+        .select(
+          '*, expense_group_members('
+          '*, member_profile:profiles!expense_group_members_user_id_fkey(display_name))',
+        )
         .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Group ledger: expenses with shares and payer display name.
+  static Future<List<Map<String, dynamic>>> fetchGroupExpenses(String groupId) async {
+    if (_uid == null) return [];
+    final res = await _client
+        .from('group_expenses')
+        .select(
+          '*, payer:profiles!group_expenses_paid_by_user_id_fkey(display_name), '
+          'group_expense_participants('
+          '*, participant:profiles!group_expense_participants_user_id_fkey(display_name))',
+        )
+        .eq('group_id', groupId)
+        .order('expense_date', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Atomic insert via [create_group_expense] RPC. [shares] entries:
+  /// `{'user_id': uuid, 'share_amount': double}` — must sum to [amount].
+  static Future<String> createGroupExpense({
+    required String groupId,
+    required String title,
+    required double amount,
+    required String paidByUserId,
+    required DateTime expenseDate,
+    required List<Map<String, dynamic>> shares,
+  }) async {
+    final res = await _client.rpc(
+      'create_group_expense',
+      params: {
+        'p_group_id': groupId,
+        'p_title': title,
+        'p_amount': amount,
+        'p_paid_by_user_id': paidByUserId,
+        'p_expense_date': expenseDate.toIso8601String().split('T').first,
+        'p_shares': shares,
+      },
+    );
+    if (res == null) throw StateError('create_group_expense returned null');
+    return res.toString();
+  }
+
+  static Future<void> deleteGroupExpense(String expenseId) async {
+    await _client.from('group_expenses').delete().eq('id', expenseId);
   }
 
   static Future<Map<String, dynamic>> createExpenseGroup({required String name}) async {
