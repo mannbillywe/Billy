@@ -6,8 +6,8 @@ class LendBorrowNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   @override
   Future<List<Map<String, dynamic>>> build() => SupabaseService.fetchLendBorrow();
 
+  /// Avoid setting bare [AsyncLoading] — it clears [valueOrNull] and zeros totals/list until fetch returns.
   Future<void> refresh() async {
-    state = const AsyncValue.loading();
     state = await AsyncValue.guard(() => SupabaseService.fetchLendBorrow());
   }
 

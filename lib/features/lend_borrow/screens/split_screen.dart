@@ -146,16 +146,48 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
                 FilledButton(
                   onPressed: () async {
                     final name = nameCtrl.text.trim();
-                    final amount = double.tryParse(amountCtrl.text.trim());
-                    if (name.isEmpty || amount == null || amount <= 0) return;
+                    final normalizedAmount = amountCtrl.text.trim().replaceAll(',', '.');
+                    final amount = double.tryParse(normalizedAmount);
+                    if (name.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Enter a counterparty name')),
+                      );
+                      return;
+                    }
+                    if (amount == null || amount <= 0) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Enter a valid amount greater than zero')),
+                      );
+                      return;
+                    }
                     Navigator.pop(ctx);
-                    await ref.read(lendBorrowProvider.notifier).addEntry(
-                          counterpartyName: name,
-                          amount: amount,
-                          type: type,
-                          counterpartyUserId: linkedUserId,
-                          groupId: groupId,
+                    try {
+                      await ref.read(lendBorrowProvider.notifier).addEntry(
+                            counterpartyName: name,
+                            amount: amount,
+                            type: type,
+                            counterpartyUserId: linkedUserId,
+                            groupId: groupId,
+                          );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Transaction saved'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
                         );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Could not save: $e'),
+                            backgroundColor: BillyTheme.red500,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    }
                   },
                   style: FilledButton.styleFrom(backgroundColor: BillyTheme.emerald600, padding: const EdgeInsets.symmetric(vertical: 16)),
                   child: const Text('Save'),
@@ -432,6 +464,30 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
           const SizedBox(height: 24),
           const Divider(),
           const SizedBox(height: 16),
+          if (lbAsync.hasError) ...[
+            Material(
+              color: BillyTheme.red500.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Could not load transactions. ${lbAsync.error}',
+                        style: const TextStyle(fontSize: 13, color: BillyTheme.gray800),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => ref.read(lendBorrowProvider.notifier).refresh(),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Row(
             children: [
               Expanded(

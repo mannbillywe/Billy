@@ -52,15 +52,25 @@ class SupabaseService {
     final uid = _uid;
     if (uid == null) return [];
     // Align with RLS: creator or linked counterparty can read the row.
-    final res = await _client
-        .from('lend_borrow_entries')
-        .select(
-          '*, creator_profile:profiles!lend_borrow_entries_user_id_fkey(display_name), '
-          'counterparty_profile:profiles!lend_borrow_entries_counterparty_user_id_fkey(display_name)',
-        )
-        .or('user_id.eq.$uid,counterparty_user_id.eq.$uid')
-        .order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(res);
+    try {
+      final res = await _client
+          .from('lend_borrow_entries')
+          .select(
+            '*, creator_profile:profiles!lend_borrow_entries_user_id_fkey(display_name), '
+            'counterparty_profile:profiles!lend_borrow_entries_counterparty_user_id_fkey(display_name)',
+          )
+          .or('user_id.eq.$uid,counterparty_user_id.eq.$uid')
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(res);
+    } catch (_) {
+      // FK hint names can differ on some projects; still return rows for UI.
+      final res = await _client
+          .from('lend_borrow_entries')
+          .select()
+          .or('user_id.eq.$uid,counterparty_user_id.eq.$uid')
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(res);
+    }
   }
 
   static Future<void> insertLendBorrow({
@@ -72,7 +82,7 @@ class SupabaseService {
     String? counterpartyUserId,
     String? groupId,
   }) async {
-    if (_uid == null) return;
+    if (_uid == null) throw StateError('Not signed in');
     await _client.from('lend_borrow_entries').insert({
       'user_id': _uid,
       'counterparty_name': counterpartyName,
