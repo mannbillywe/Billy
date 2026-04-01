@@ -36,9 +36,6 @@ dependencies:
   supabase_flutter: ^2.8.0
   google_sign_in: ^6.2.2
 
-  # AI
-  google_generative_ai: ^0.4.6
-
   # State & Navigation
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1

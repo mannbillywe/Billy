@@ -18,6 +18,7 @@ class ExtractedReceipt {
     this.cgst = 0,
     this.sgst = 0,
     this.igst = 0,
+    this.discount = 0,
     this.paymentStatus,
     this.notes,
     this.confidence = 'medium',
@@ -28,6 +29,7 @@ class ExtractedReceipt {
   final String? invoiceNumber;
   final List<LineItem> lineItems;
   final double subtotal;
+  /// Combined tax amount for legacy `documents.tax_amount` (CGST+SGST+IGST or GST field).
   final double tax;
   final double total;
   final String currency;
@@ -41,12 +43,56 @@ class ExtractedReceipt {
   final double cgst;
   final double sgst;
   final double igst;
+  final double discount;
   final String? paymentStatus;
   final String? notes;
   final String confidence;
 
+  ExtractedReceipt copyWith({
+    String? vendorName,
+    String? date,
+    String? invoiceNumber,
+    List<LineItem>? lineItems,
+    double? subtotal,
+    double? tax,
+    double? total,
+    String? currency,
+    String? category,
+    String? paymentMethod,
+    double? cgst,
+    double? sgst,
+    double? igst,
+    double? discount,
+    String? notes,
+    String? confidence,
+  }) {
+    return ExtractedReceipt(
+      vendorName: vendorName ?? this.vendorName,
+      date: date ?? this.date,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      lineItems: lineItems ?? this.lineItems,
+      subtotal: subtotal ?? this.subtotal,
+      tax: tax ?? this.tax,
+      total: total ?? this.total,
+      currency: currency ?? this.currency,
+      category: category ?? this.category,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      vendorAddress: this.vendorAddress,
+      vendorPhone: this.vendorPhone,
+      vendorGstin: this.vendorGstin,
+      buyerName: this.buyerName,
+      buyerGstin: this.buyerGstin,
+      cgst: cgst ?? this.cgst,
+      sgst: sgst ?? this.sgst,
+      igst: igst ?? this.igst,
+      discount: discount ?? this.discount,
+      paymentStatus: this.paymentStatus,
+      notes: notes ?? this.notes,
+      confidence: confidence ?? this.confidence,
+    );
+  }
+
   factory ExtractedReceipt.fromJson(Map<String, dynamic> json) {
-    // Handle both single invoice and array of invoices
     Map<String, dynamic> invoice = json;
     if (json.containsKey('invoices') && json['invoices'] is List) {
       final invoices = json['invoices'] as List;
@@ -60,13 +106,22 @@ class ExtractedReceipt {
             .toList() ??
         [];
 
+    final cgst = _num(invoice['cgst']);
+    final sgst = _num(invoice['sgst']);
+    final igst = _num(invoice['igst']);
+    final gstField = _num(invoice['gst']);
+    final taxField = _num(invoice['tax']);
+    final explicitGstParts = cgst + sgst + igst;
+    // Avoid double-counting: prefer explicit CGST/SGST/IGST; else fall back to single gst/tax fields.
+    final combinedTax = explicitGstParts > 0 ? explicitGstParts : (gstField + taxField);
+
     return ExtractedReceipt(
       vendorName: _str(invoice['vendor_name']) ?? 'Unknown',
       date: _str(invoice['invoice_date']) ?? _str(invoice['date']) ?? '',
       invoiceNumber: _str(invoice['invoice_number']),
       lineItems: items,
       subtotal: _num(invoice['subtotal']),
-      tax: _num(invoice['gst']) + _num(invoice['cgst']) + _num(invoice['sgst']) + _num(invoice['igst']) + _num(invoice['tax']),
+      tax: combinedTax,
       total: _num(invoice['total_amount']) > 0 ? _num(invoice['total_amount']) : _num(invoice['total']),
       currency: _str(invoice['currency']) ?? 'INR',
       category: _str(invoice['category']),
@@ -76,9 +131,10 @@ class ExtractedReceipt {
       vendorGstin: _str(invoice['vendor_gstin']),
       buyerName: _str(invoice['buyer_name']),
       buyerGstin: _str(invoice['buyer_gstin']),
-      cgst: _num(invoice['cgst']),
-      sgst: _num(invoice['sgst']),
-      igst: _num(invoice['igst']),
+      cgst: cgst,
+      sgst: sgst,
+      igst: igst,
+      discount: _num(invoice['discount']),
       paymentStatus: _str(invoice['payment_status']),
       notes: _str(invoice['notes']),
       confidence: _str(json['extraction_confidence']) ?? 'medium',
@@ -86,26 +142,29 @@ class ExtractedReceipt {
   }
 
   Map<String, dynamic> toJson() => {
-    'vendor_name': vendorName,
-    'invoice_date': date,
-    'invoice_number': invoiceNumber,
-    'line_items': lineItems.map((e) => e.toJson()).toList(),
-    'subtotal': subtotal,
-    'cgst': cgst,
-    'sgst': sgst,
-    'igst': igst,
-    'total_amount': total,
-    'currency': currency,
-    'category': category,
-    'payment_method': paymentMethod,
-    'vendor_address': vendorAddress,
-    'vendor_phone': vendorPhone,
-    'vendor_gstin': vendorGstin,
-    'buyer_name': buyerName,
-    'buyer_gstin': buyerGstin,
-    'payment_status': paymentStatus,
-    'notes': notes,
-  };
+        'vendor_name': vendorName,
+        'invoice_date': date,
+        'invoice_number': invoiceNumber,
+        'line_items': lineItems.map((e) => e.toJson()).toList(),
+        'subtotal': subtotal,
+        'discount': discount,
+        'cgst': cgst,
+        'sgst': sgst,
+        'igst': igst,
+        'tax_combined': tax,
+        'total_amount': total,
+        'currency': currency,
+        'category': category,
+        'payment_method': paymentMethod,
+        'vendor_address': vendorAddress,
+        'vendor_phone': vendorPhone,
+        'vendor_gstin': vendorGstin,
+        'buyer_name': buyerName,
+        'buyer_gstin': buyerGstin,
+        'payment_status': paymentStatus,
+        'notes': notes,
+        'extraction_confidence': confidence,
+      };
 
   static String? _str(dynamic v) {
     if (v == null) return null;
@@ -128,6 +187,7 @@ class LineItem {
     this.unitPrice,
     required this.total,
     this.hsnCode,
+    this.category,
   });
 
   final String description;
@@ -135,6 +195,25 @@ class LineItem {
   final double? unitPrice;
   final double total;
   final String? hsnCode;
+  final String? category;
+
+  LineItem copyWith({
+    String? description,
+    int? quantity,
+    double? unitPrice,
+    double? total,
+    String? hsnCode,
+    String? category,
+  }) {
+    return LineItem(
+      description: description ?? this.description,
+      quantity: quantity ?? this.quantity,
+      unitPrice: unitPrice ?? this.unitPrice,
+      total: total ?? this.total,
+      hsnCode: hsnCode ?? this.hsnCode,
+      category: category ?? this.category,
+    );
+  }
 
   factory LineItem.fromJson(Map<String, dynamic> json) {
     return LineItem(
@@ -143,14 +222,16 @@ class LineItem {
       unitPrice: (json['unit_price'] as num?)?.toDouble(),
       total: (json['amount'] as num?)?.toDouble() ?? (json['total'] as num?)?.toDouble() ?? 0,
       hsnCode: json['hsn_code'] as String?,
+      category: json['category'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'description': description,
-    'quantity': quantity,
-    'unit_price': unitPrice,
-    'amount': total,
-    'hsn_code': hsnCode,
-  };
+        'description': description,
+        'quantity': quantity,
+        'unit_price': unitPrice,
+        'amount': total,
+        'hsn_code': hsnCode,
+        'category': category,
+      };
 }

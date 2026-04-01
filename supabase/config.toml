@@ -1,0 +1,4 @@
+# Supabase local / CLI config. Set secrets in Dashboard: Edge Functions → extract-invoice → Secrets → GEMINI_API_KEY
+
+[functions.extract-invoice]
+verify_jwt = true

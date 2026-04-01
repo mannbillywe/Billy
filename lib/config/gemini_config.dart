@@ -1,4 +1,6 @@
+/// Gemini model name reference only. API calls run in Supabase Edge Function `extract-invoice`.
 class GeminiConfig {
-  static const String apiKey = 'AIzaSyBv_yt_IcC8aG1qSb30Xa3GdWy1j74qKmQ';
+  GeminiConfig._();
+
   static const String model = 'gemini-2.0-flash';
 }

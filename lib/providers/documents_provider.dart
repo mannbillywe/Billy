@@ -19,6 +19,7 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     String type = 'receipt',
     String? description,
     String? paymentMethod,
+    String? currency,
     Map<String, dynamic>? extractedData,
   }) async {
     await SupabaseService.insertDocument(
@@ -29,6 +30,7 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       type: type,
       description: description,
       paymentMethod: paymentMethod,
+      currency: currency,
       extractedData: extractedData,
     );
     await refresh();

@@ -1,72 +1,47 @@
-# Per-User Gemini API Key Setup
+# Gemini API key for invoice extraction (per user in Supabase)
 
-Each user can have their own Google Gemini API key. This avoids rate limits and lets you track usage per user.
+The Flutter app does **not** store or send your Google API key. Scanning calls the Edge Function **`extract-invoice`**, which picks a key in this order:
+
+1. **`profiles.gemini_api_key`** for the **logged-in user** (same UUID as `auth.users.id`)
+2. If that is null/empty → **`GEMINI_API_KEY`** on the Edge Function (optional shared default)
+
+There is still **one Gemini request per scan** on the server.
 
 ---
 
-## 1. Run the migration in Supabase
+## 1. Set a key per user (Table Editor)
 
-1. Go to **Supabase Dashboard** → **SQL Editor** → **New Query**
-2. Paste and run:
+1. Supabase → **Authentication** → **Users** → copy the user’s **UUID**.
+2. **Table Editor** → **`profiles`** → find the row where **`id`** = that UUID.
+3. Edit **`gemini_api_key`** → paste the Google AI Studio / Gemini API key → **Save**.
 
-```sql
-alter table public.profiles
-  add column if not exists gemini_api_key text;
+Requirements:
 
-comment on column public.profiles.gemini_api_key is 'User-specific Google Gemini API key. If null, app uses default key.';
+- RLS must allow the user to **read** their own `profiles` row (default “own profile” select policy is enough).
+- The Edge Function uses the **user’s JWT** to query `profiles`, so only **their** row is visible.
+
+---
+
+## 2. Optional: default key for everyone without a profile key
+
+Dashboard → **Edge Functions** → **Secrets** (or CLI):
+
+```bash
+supabase secrets set GEMINI_API_KEY=your_default_key
+```
+
+Users with a non-empty **`profiles.gemini_api_key`** still use **their** key first.
+
+---
+
+## 3. Deploy the function
+
+```bash
+supabase functions deploy extract-invoice
 ```
 
 ---
 
-## 2. Where to manage users and API keys in Supabase
+## 4. Logs
 
-### See all users
-
-**Authentication** → **Users**
-
-- Lists every user: email, id (UUID), created_at, last sign in
-- Copy a user's **id** to find them in the profiles table
-
-### Edit API key per user
-
-**Table Editor** → **profiles**
-
-- Each row = one user (id matches auth.users.id)
-- Find the user by `id` (same as in Authentication > Users)
-- Edit the `gemini_api_key` column: paste the user's Google API key
-- Leave blank to use the app's default key
-
-### Quick workflow
-
-1. **Authentication** → **Users** → copy user's UUID
-2. **Table Editor** → **profiles** → filter or search by that id
-3. Click the row → edit `gemini_api_key` → paste key → Save
-
----
-
-## 3. Where to see Google API usage (not in Supabase)
-
-Google Gemini usage is tracked in **Google Cloud Console**, not Supabase:
-
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Select the project that owns the API key
-3. **APIs & Services** → **Dashboard** or **Credentials**
-4. For quota/usage: **APIs & Services** → **Enabled APIs** → **Generative Language API** → **Quotas**
-
-Each user's key = separate project/quota. Your app's default key = one project.
-
----
-
-## 4. How it works in the app
-
-- **Single-shot extraction**: Exactly 1 Gemini API call per image. No retries, no model fallbacks.
-- **Per-user key**: Before each scan, the app fetches `gemini_api_key` from the user's profile.
-- **Fallback**: If the user has no key, the app uses the default key from `lib/config/gemini_config.dart`.
-
----
-
-## 5. Users can set their own key (optional)
-
-In the app: **Profile** → **Settings** → **Gemini API Key** → enter key → Save.
-
-Or you can set it for them in Supabase Table Editor.
+In function logs you’ll see `key_source=profiles.gemini_api_key` or `key_source=GEMINI_API_KEY secret` (the key value is never logged).

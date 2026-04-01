@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/billy_theme.dart';
-import '../../../services/supabase_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../export/models/export_document.dart';
 import '../../export/screens/export_screen.dart';
 import '../../../providers/documents_provider.dart';
-import '../../../providers/profile_provider.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -18,52 +16,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  void _showApiKeyDialog() async {
-    final key = await SupabaseService.getGeminiApiKey();
-    if (!mounted) return;
-    final ctrl = TextEditingController(text: key ?? '');
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Gemini API Key', style: TextStyle(fontWeight: FontWeight.w700)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Use your own Google AI key for receipt extraction.', style: TextStyle(fontSize: 14, color: BillyTheme.gray500)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              obscureText: true,
-              decoration: InputDecoration(
-                hintText: 'AIza...',
-                filled: true,
-                fillColor: BillyTheme.gray50,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.emerald600)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () async {
-              final val = ctrl.text.trim();
-              await SupabaseService.updateProfile(geminiApiKey: val.isEmpty ? '' : val);
-              if (ctx.mounted) {
-                ref.invalidate(profileProvider);
-                Navigator.pop(ctx);
-              }
-            },
-            child: Text('Save', style: TextStyle(color: BillyTheme.emerald600)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final authAsync = ref.watch(authStateProvider);
@@ -144,7 +96,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const Text('Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
           const SizedBox(height: 12),
           _SettingsTile(label: 'Notifications', onTap: () {}),
-          _SettingsTile(label: 'Gemini API Key', onTap: _showApiKeyDialog),
           _SettingsTile(label: 'Export Data', onTap: () {
             Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ExportScreen(documents: exportDocs)));
           }),

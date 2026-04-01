@@ -4,13 +4,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/logging/billy_logger.dart';
 import '../../../core/theme/billy_theme.dart';
-import '../../../providers/documents_provider.dart';
-import '../../../services/supabase_service.dart';
 import '../models/extracted_receipt.dart';
-import '../services/gemini_extractor.dart';
+import '../services/invoice_extraction_service.dart';
+import '../widgets/scan_error.dart';
 import '../widgets/scan_idle.dart';
 import '../widgets/scan_processing.dart';
-import '../widgets/scan_success.dart';
+import '../widgets/scan_review_panel.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -22,8 +21,21 @@ class ScanScreen extends ConsumerStatefulWidget {
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   ScanState _state = ScanState.idle;
   ExtractedReceipt? _extracted;
+  String? _errorMessage;
+  bool _extractInFlight = false;
 
+  String _mimeTypeForFile(XFile file) {
+    final p = file.name.toLowerCase();
+    if (p.endsWith('.png')) return 'image/png';
+    if (p.endsWith('.webp')) return 'image/webp';
+    if (p.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
+  /// Exactly one edge-function (→ one Gemini) call per successful image pick.
   Future<void> _pickAndExtract(ImageSource source) async {
+    if (_extractInFlight) return;
+
     final picker = ImagePicker();
     final XFile? file = await picker.pickImage(
       source: source,
@@ -33,60 +45,32 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
     if (file == null) return;
 
-    setState(() => _state = ScanState.processing);
+    setState(() {
+      _extractInFlight = true;
+      _state = ScanState.processing;
+      _errorMessage = null;
+    });
 
     try {
       final bytes = await file.readAsBytes();
-      final userKey = await SupabaseService.getGeminiApiKey();
-      BillyLogger.info('Using ${userKey != null ? "user API key" : "default API key"}');
-      final extractor = GeminiExtractor(apiKey: userKey);
-      final receipt = await extractor.extractFromImage(bytes);
+      final mime = _mimeTypeForFile(file);
+      BillyLogger.info('scan: picked image ${bytes.length} bytes, single extract-invoice call');
+      final receipt = await InvoiceExtractionService.extractOnce(bytes, mimeType: mime);
 
       if (!mounted) return;
       setState(() {
+        _extractInFlight = false;
         _state = ScanState.success;
         _extracted = receipt;
       });
     } catch (e, stack) {
       BillyLogger.extractionFailed(e, stack);
       if (!mounted) return;
-      final errStr = e.toString().toLowerCase();
-      final isRateLimit = errStr.contains('429') ||
-          errStr.contains('rate limit') ||
-          errStr.contains('quota') ||
-          errStr.contains('resource exhausted') ||
-          errStr.contains('too many requests');
-
       setState(() {
-        _state = ScanState.success;
-        _extracted = ExtractedReceipt(
-          vendorName: isRateLimit
-              ? 'Rate limit hit – try again later'
-              : 'Extraction failed',
-          date: DateTime.now().toIso8601String().substring(0, 10),
-          lineItems: [],
-          subtotal: 0,
-          tax: 0,
-          total: 0,
-        );
+        _extractInFlight = false;
+        _state = ScanState.error;
+        _errorMessage = e.toString().split('\n').first;
       });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isRateLimit
-                  ? 'API rate limit hit. Wait a few minutes or add your own API key in Profile → Settings.'
-                  : 'Extraction failed: ${e.toString().split('\n').first}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            backgroundColor: BillyTheme.red500,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 5),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-        );
-      }
     }
   }
 
@@ -97,46 +81,12 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     setState(() {
       _state = ScanState.idle;
       _extracted = null;
+      _errorMessage = null;
     });
   }
 
-  Future<void> _save() async {
-    if (_extracted == null) return;
-    final r = _extracted!;
-
-    try {
-      await ref.read(documentsProvider.notifier).addDocument(
-        vendorName: r.vendorName,
-        amount: r.total,
-        taxAmount: r.tax,
-        date: r.date.isNotEmpty ? r.date : DateTime.now().toIso8601String().substring(0, 10),
-        type: 'receipt',
-        description: r.category ?? r.lineItems.map((e) => e.description).join(', '),
-        paymentMethod: r.paymentMethod,
-        extractedData: r.toJson(),
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Receipt saved!', style: TextStyle(fontWeight: FontWeight.w700)),
-          backgroundColor: BillyTheme.emerald600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      );
-      _discard();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Save failed: $e', style: const TextStyle(fontWeight: FontWeight.w700)),
-          backgroundColor: BillyTheme.red500,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      );
-    }
+  void _onSaveDone() {
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   @override
@@ -169,16 +119,22 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
             child: switch (_state) {
               ScanState.idle => ScanIdle(
                   key: const ValueKey('idle'),
-                  onCamera: _openCamera,
-                  onPhotoLibrary: _pickFromGallery,
-                  onUploadPdf: _pickFromGallery,
+                  onCamera: _extractInFlight ? () {} : _openCamera,
+                  onPhotoLibrary: _extractInFlight ? () {} : _pickFromGallery,
+                  onUploadPdf: _extractInFlight ? () {} : _pickFromGallery,
                 ),
               ScanState.processing => const ScanProcessing(key: ValueKey('processing')),
-              ScanState.success => ScanSuccess(
-                  key: const ValueKey('success'),
-                  receipt: _extracted!,
+              ScanState.success => ScanReviewPanel(
+                  key: const ValueKey('review'),
+                  initialReceipt: _extracted!,
                   onDiscard: _discard,
-                  onSave: _save,
+                  onDone: _onSaveDone,
+                ),
+              ScanState.error => ScanError(
+                  key: const ValueKey('error'),
+                  message: _errorMessage ?? 'Something went wrong',
+                  onRetry: _discard,
+                  onBack: () => Navigator.of(context).maybePop(),
                 ),
             },
           ),
@@ -188,4 +144,4 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 }
 
-enum ScanState { idle, processing, success }
+enum ScanState { idle, processing, success, error }

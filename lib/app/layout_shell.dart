@@ -50,7 +50,22 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
 
   void _openScan() {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ScanScreen()),
+      MaterialPageRoute<void>(
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Scan invoice'),
+            backgroundColor: BillyTheme.scaffoldBg,
+            foregroundColor: BillyTheme.gray800,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => Navigator.of(ctx).maybePop(),
+            ),
+          ),
+          backgroundColor: BillyTheme.scaffoldBg,
+          body: const ScanScreen(),
+        ),
+      ),
     );
   }
 

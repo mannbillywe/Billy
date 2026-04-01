@@ -24,6 +24,7 @@ class SupabaseService {
     String? category,
     String? paymentMethod,
     String? description,
+    String? currency,
     Map<String, dynamic>? extractedData,
   }) async {
     if (_uid == null) return;
@@ -36,6 +37,7 @@ class SupabaseService {
       'type': type,
       'description': description,
       'payment_method': paymentMethod,
+      if (currency != null && currency.isNotEmpty) 'currency': currency,
       'extracted_data': extractedData,
       'status': 'saved',
     });
@@ -128,7 +130,7 @@ class SupabaseService {
   }
 
   // ─── Profile ─────────────────────────────────────────────────────
-  /// Returns the current user's Gemini API key if set. Null = use app default.
+  /// Scanning does not use this — the Edge Function reads `profiles.gemini_api_key` for the JWT user.
   static Future<String?> getGeminiApiKey() async {
     if (_uid == null) return null;
     try {
@@ -275,6 +277,41 @@ class SupabaseService {
 
   static Future<void> deleteGroupExpense(String expenseId) async {
     await _client.from('group_expenses').delete().eq('id', expenseId);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchGroupSettlements(String groupId) async {
+    if (_uid == null) return [];
+    final res = await _client
+        .from('group_settlements')
+        .select(
+          '*, payer_profile:profiles!group_settlements_payer_user_id_fkey(display_name), '
+          'payee_profile:profiles!group_settlements_payee_user_id_fkey(display_name)',
+        )
+        .eq('group_id', groupId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> insertGroupSettlement({
+    required String groupId,
+    required String payeeUserId,
+    required double amount,
+    String? note,
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    await _client.from('group_settlements').insert({
+      'group_id': groupId,
+      'payer_user_id': uid,
+      'payee_user_id': payeeUserId,
+      'amount': amount,
+      if (note != null && note.isNotEmpty) 'note': note,
+      'created_by': uid,
+    });
+  }
+
+  static Future<void> deleteGroupSettlement(String settlementId) async {
+    await _client.from('group_settlements').delete().eq('id', settlementId);
   }
 
   static Future<Map<String, dynamic>> createExpenseGroup({required String name}) async {

@@ -75,8 +75,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           _tile(
             icon: Icons.person_outline,
-            title: 'Account & API key',
-            subtitle: 'Profile, Gemini key, sign out',
+            title: 'Account',
+            subtitle: 'Profile and sign out',
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
