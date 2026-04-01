@@ -2,8 +2,11 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/profile_provider.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -18,13 +21,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final docsAsync = ref.watch(documentsProvider);
-    final dailyAsync = ref.watch(dailySpendProvider);
+    final profile = ref.watch(profileProvider).valueOrNull;
+    final currency = profile?['preferred_currency'] as String?;
     final docs = docsAsync.valueOrNull ?? [];
-    final dailyData = dailyAsync.valueOrNull ?? [];
+
+    final range = DocumentDateRange.forFilter(_dateFilter);
+    final filtered = DocumentDateRange.filterDocuments(docs, range);
 
     double totalExpenses = 0;
     final catMap = <String, double>{};
-    for (final d in docs) {
+    for (final d in filtered) {
       final amount = (d['amount'] as num?)?.toDouble() ?? 0;
       final desc = (d['description'] as String?)?.split(',').first.trim() ?? 'Other';
       totalExpenses += amount;
@@ -37,7 +43,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ? ((topCategory.value / totalExpenses) * 100).round()
         : 0;
 
-    final barData = dailyData.isNotEmpty ? dailyData : [1200, 1900, 1500, 2200, 1800, 2800, 3200].map((e) => e.toDouble()).toList();
+    final barData = DocumentDateRange.lastSevenDaySpending(filtered, range.end);
     final avgSpend = barData.isNotEmpty ? barData.reduce((a, b) => a + b) / barData.length : 0.0;
 
     return SingleChildScrollView(
@@ -52,49 +58,77 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               const Text('Analytics', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
               Row(
                 children: [
-                  _CircleButton(icon: Icons.notifications_outlined),
+                  _CircleButton(icon: Icons.notifications_outlined, onPressed: () {}),
                   const SizedBox(width: 8),
-                  _CircleButton(icon: Icons.settings_outlined),
+                  _CircleButton(icon: Icons.settings_outlined, onPressed: () {}),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          Text(
+            'Range: ${_labelForFilter(_dateFilter)}',
+            style: const TextStyle(fontSize: 12, color: BillyTheme.gray500),
+          ),
+          const SizedBox(height: 12),
           _DateFilterBar(selected: _dateFilter, onChanged: (v) => setState(() => _dateFilter = v)),
           const SizedBox(height: 20),
-
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _ExpenseBreakdown(topCategory: topCategory?.key ?? 'N/A', topPct: topPct, totalExpenses: totalExpenses)),
+              Expanded(
+                child: _ExpenseBreakdown(
+                  topCategory: topCategory?.key ?? '—',
+                  topPct: topPct,
+                  totalExpenses: totalExpenses,
+                  currencyCode: currency,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _TopCategoriesBarChart(data: barData, totalSpent: totalExpenses, avgSpend: avgSpend)),
+              Expanded(
+                child: _TopCategoriesBarChart(
+                  data: barData,
+                  totalSpent: totalExpenses,
+                  avgSpend: avgSpend,
+                  currencyCode: currency,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
-
-          _TopCategoriesList(categories: sortedCats, totalExpenses: totalExpenses),
+          _TopCategoriesList(categories: sortedCats, totalExpenses: totalExpenses, currencyCode: currency),
         ],
       ),
     );
   }
+
+  static String _labelForFilter(String key) {
+    switch (key) {
+      case '1W':
+        return 'Last 7 days';
+      case '3M':
+        return 'Last 3 months';
+      case '1M':
+      default:
+        return 'Last month';
+    }
+  }
 }
 
 class _CircleButton extends StatelessWidget {
-  const _CircleButton({required this.icon});
+  const _CircleButton({required this.icon, this.onPressed});
   final IconData icon;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: BillyTheme.gray100),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4)],
+    return IconButton.filledTonal(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20, color: BillyTheme.gray600),
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.white,
+        side: BorderSide(color: BillyTheme.gray100),
       ),
-      child: Icon(icon, size: 20, color: BillyTheme.gray600),
     );
   }
 }
@@ -145,13 +179,20 @@ class _DateFilterBar extends StatelessWidget {
 }
 
 class _ExpenseBreakdown extends StatelessWidget {
-  const _ExpenseBreakdown({required this.topCategory, required this.topPct, required this.totalExpenses});
+  const _ExpenseBreakdown({
+    required this.topCategory,
+    required this.topPct,
+    required this.totalExpenses,
+    this.currencyCode,
+  });
   final String topCategory;
   final int topPct;
   final double totalExpenses;
+  final String? currencyCode;
 
   @override
   Widget build(BuildContext context) {
+    final rest = (100 - topPct).clamp(0, 100);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -163,9 +204,9 @@ class _ExpenseBreakdown extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Expense Breakdown', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+          const Text('Expense breakdown', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
           const SizedBox(height: 2),
-          const Text('This Month', style: TextStyle(fontSize: 12, color: BillyTheme.gray500)),
+          const Text('Selected range', style: TextStyle(fontSize: 12, color: BillyTheme.gray500)),
           const SizedBox(height: 16),
           SizedBox(
             height: 120,
@@ -175,8 +216,11 @@ class _ExpenseBreakdown extends StatelessWidget {
                 PieChart(
                   PieChartData(
                     sections: [
-                      PieChartSectionData(value: topPct.toDouble(), color: BillyTheme.green400, radius: 16, showTitle: false),
-                      PieChartSectionData(value: (100 - topPct).toDouble(), color: BillyTheme.gray100, radius: 16, showTitle: false),
+                      if (totalExpenses > 0) ...[
+                        PieChartSectionData(value: topPct.toDouble(), color: BillyTheme.green400, radius: 16, showTitle: false),
+                        PieChartSectionData(value: rest.toDouble(), color: BillyTheme.gray100, radius: 16, showTitle: false),
+                      ] else
+                        PieChartSectionData(value: 100, color: BillyTheme.gray100, radius: 16, showTitle: false),
                     ],
                     centerSpaceRadius: 35,
                     sectionsSpace: 0,
@@ -186,7 +230,10 @@ class _ExpenseBreakdown extends StatelessWidget {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('\$${totalExpenses.toInt()}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+                    Text(
+                      AppCurrency.format(totalExpenses, currencyCode),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+                    ),
                     Text(topCategory, style: const TextStyle(fontSize: 10, color: BillyTheme.gray500)),
                   ],
                 ),
@@ -208,15 +255,20 @@ class _ExpenseBreakdown extends StatelessWidget {
 }
 
 class _TopCategoriesBarChart extends StatelessWidget {
-  const _TopCategoriesBarChart({required this.data, required this.totalSpent, required this.avgSpend});
+  const _TopCategoriesBarChart({
+    required this.data,
+    required this.totalSpent,
+    required this.avgSpend,
+    this.currencyCode,
+  });
   final List<double> data;
   final double totalSpent;
   final double avgSpend;
+  final String? currencyCode;
 
   @override
   Widget build(BuildContext context) {
     final maxY = data.isNotEmpty ? data.reduce((a, b) => a > b ? a : b) * 1.2 : 1.0;
-    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -229,37 +281,35 @@ class _TopCategoriesBarChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Top Categories', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+          const Text('Daily spend (7 days)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
           const SizedBox(height: 16),
           SizedBox(
             height: 100,
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: maxY,
-                barTouchData: BarTouchData(enabled: false),
-                titlesData: const FlTitlesData(show: false),
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                barGroups: data.asMap().entries.map((e) {
-                  return BarChartGroupData(x: e.key, barRods: [
-                    BarChartRodData(
-                      toY: e.value,
-                      color: BillyTheme.green400.withValues(alpha: 0.6),
-                      width: 12,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+            child: data.every((e) => e == 0)
+                ? const Center(child: Text('No data in range', style: TextStyle(fontSize: 11, color: BillyTheme.gray400)))
+                : BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: maxY,
+                      barTouchData: BarTouchData(enabled: false),
+                      titlesData: const FlTitlesData(show: false),
+                      gridData: const FlGridData(show: false),
+                      borderData: FlBorderData(show: false),
+                      barGroups: data.asMap().entries.map((e) {
+                        return BarChartGroupData(
+                          x: e.key,
+                          barRods: [
+                            BarChartRodData(
+                              toY: e.value,
+                              color: BillyTheme.green400.withValues(alpha: 0.6),
+                              width: 12,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                            ),
+                          ],
+                        );
+                      }).toList(),
                     ),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [months.first, months[2], months[4], months.last].map((m) {
-              return Text(m, style: const TextStyle(fontSize: 10, color: BillyTheme.gray400));
-            }).toList(),
+                  ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -269,7 +319,10 @@ class _TopCategoriesBarChart extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Spent', style: TextStyle(fontSize: 10, color: BillyTheme.gray500)),
-                    Text('\$${totalSpent.toInt()}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+                    Text(
+                      AppCurrency.format(totalSpent, currencyCode),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+                    ),
                   ],
                 ),
               ),
@@ -277,8 +330,11 @@ class _TopCategoriesBarChart extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Avg', style: TextStyle(fontSize: 10, color: BillyTheme.gray500)),
-                    Text('\$${avgSpend.toInt()}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+                    const Text('Avg / day', style: TextStyle(fontSize: 10, color: BillyTheme.gray500)),
+                    Text(
+                      AppCurrency.format(avgSpend, currencyCode),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+                    ),
                   ],
                 ),
               ),
@@ -291,9 +347,14 @@ class _TopCategoriesBarChart extends StatelessWidget {
 }
 
 class _TopCategoriesList extends StatelessWidget {
-  const _TopCategoriesList({required this.categories, required this.totalExpenses});
+  const _TopCategoriesList({
+    required this.categories,
+    required this.totalExpenses,
+    this.currencyCode,
+  });
   final List<MapEntry<String, double>> categories;
   final double totalExpenses;
+  final String? currencyCode;
 
   static const _icons = ['🛍️', '🍔', '⚡', '🚗', '🎬', '💊'];
   static const _colors = [
@@ -308,7 +369,17 @@ class _TopCategoriesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = categories.take(4).toList();
-    if (items.isEmpty) return const SizedBox.shrink();
+    if (items.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: BillyTheme.gray50),
+        ),
+        child: const Text('No categories in this range', style: TextStyle(color: BillyTheme.gray500)),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -320,16 +391,10 @@ class _TopCategoriesList extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Top Categories', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-              Row(
-                children: [
-                  Text('View All', style: TextStyle(fontSize: 12, color: BillyTheme.gray500)),
-                  const Icon(Icons.chevron_right, size: 14, color: BillyTheme.gray500),
-                ],
-              ),
+              Text('Top categories', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
             ],
           ),
           const SizedBox(height: 20),
@@ -359,12 +424,9 @@ class _TopCategoriesList extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(cat.key, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: BillyTheme.gray800)),
-                            Row(
-                              children: [
-                                Text('\$${cat.value.toInt()}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.chevron_right, size: 14, color: BillyTheme.gray400),
-                              ],
+                            Text(
+                              AppCurrency.format(cat.value, currencyCode),
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
                             ),
                           ],
                         ),
@@ -383,7 +445,10 @@ class _TopCategoriesList extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            SizedBox(width: 30, child: Text('$pct%', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: BillyTheme.gray500))),
+                            SizedBox(
+                              width: 30,
+                              child: Text('$pct%', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
+                            ),
                           ],
                         ),
                       ],

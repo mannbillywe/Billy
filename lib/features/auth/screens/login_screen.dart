@@ -79,17 +79,31 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 48),
+              const SizedBox(height: 32),
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset(
+                    'assets/branding/billy_logo.png',
+                    height: 96,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.account_balance_wallet_rounded, size: 72, color: BillyTheme.emerald600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
               const Text(
-                'Billy.',
-                style: TextStyle(fontSize: 48, fontWeight: FontWeight.w800, letterSpacing: -0.02, color: BillyTheme.gray800),
+                'Billy',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -0.02, color: BillyTheme.gray800),
               ),
               const SizedBox(height: 8),
               const Text(
                 'AI Financial OS',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: BillyTheme.gray500),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: BillyTheme.gray500),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 40),
               _buildField(_emailController, 'Email', hint: 'you@example.com', keyboard: TextInputType.emailAddress),
               const SizedBox(height: 14),
               _buildField(_passwordController, 'Password', obscure: true),

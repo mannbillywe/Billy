@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/profile_provider.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
 import '../widgets/ocr_banner.dart';
@@ -12,19 +13,34 @@ import '../widgets/recent_activity.dart';
 import '../widgets/spend_hero.dart';
 
 class DashboardScreen extends ConsumerWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({
+    super.key,
+    this.onOpenScan,
+    this.onExportData,
+    this.onCreateBill,
+    this.onLinkBank,
+  });
+
+  final VoidCallback? onOpenScan;
+  final VoidCallback? onExportData;
+  final VoidCallback? onCreateBill;
+  final VoidCallback? onLinkBank;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weekAsync = ref.watch(weekSpendProvider);
+    final lastWeekAsync = ref.watch(lastWeekSpendProvider);
     final recentAsync = ref.watch(recentDocsProvider);
     final dailyAsync = ref.watch(dailySpendProvider);
+    final docsAsync = ref.watch(documentsProvider);
+    final profile = ref.watch(profileProvider).valueOrNull;
+    final currency = profile?['preferred_currency'] as String?;
 
     final weekSpend = weekAsync.valueOrNull ?? 0;
+    final lastWeekSpend = lastWeekAsync.valueOrNull ?? 0;
     final recentDocs = recentAsync.valueOrNull ?? [];
+    final allDocs = docsAsync.valueOrNull ?? [];
     final dailyData = dailyAsync.valueOrNull ?? [];
-
-    final balance = weekSpend > 0 ? weekSpend * 2.5 : 2750.56;
 
     final recentItems = recentDocs.take(5).map((d) {
       final vendor = d['vendor_name'] as String? ?? 'Unknown';
@@ -56,7 +72,7 @@ class DashboardScreen extends ConsumerWidget {
 
     double totalExpenses = 0;
     final catMap = <String, double>{};
-    for (final d in recentDocs) {
+    for (final d in allDocs) {
       final amount = (d['amount'] as num?)?.toDouble() ?? 0;
       final desc = (d['description'] as String?)?.split(',').first.trim() ?? 'Other';
       totalExpenses += amount;
@@ -74,12 +90,23 @@ class DashboardScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SpendHero(balance: balance, weeklyData: dailyData),
+          SpendHero(
+            weekSpend: weekSpend,
+            currencyCode: currency,
+            weeklyData: dailyData,
+            lastWeekSpend: lastWeekSpend,
+          ),
           const SizedBox(height: 20),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: QuickActions()),
+              Expanded(
+                child: QuickActions(
+                  onCreateBill: onCreateBill,
+                  onLinkBank: onLinkBank,
+                  onExportData: onExportData,
+                ),
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -89,6 +116,7 @@ class DashboardScreen extends ConsumerWidget {
                     InsightsCard(
                       totalExpenses: totalExpenses,
                       categories: categories.take(4).toList(),
+                      currencyCode: currency,
                     ),
                   ],
                 ),
@@ -96,18 +124,18 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 20),
-          const OcrBanner(),
+          OcrBanner(onScan: onOpenScan),
           if (recentItems.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Recent', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                Text('See all', style: TextStyle(fontSize: 14, color: BillyTheme.gray400)),
+                Text('Latest 10', style: TextStyle(fontSize: 14, color: BillyTheme.gray400)),
               ],
             ),
             const SizedBox(height: 12),
-            RecentActivity(items: recentItems),
+            RecentActivity(items: recentItems, currencyCode: currency),
           ],
         ],
       ),

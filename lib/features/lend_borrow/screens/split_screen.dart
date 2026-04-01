@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../../../providers/groups_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
-import '../../../providers/splits_provider.dart';
+import '../../../providers/profile_provider.dart';
+import '../../../providers/social_provider.dart';
 
 class SplitScreen extends ConsumerStatefulWidget {
   const SplitScreen({super.key});
@@ -16,109 +19,205 @@ class SplitScreen extends ConsumerStatefulWidget {
 class _SplitScreenState extends ConsumerState<SplitScreen> {
   String _activeTab = 'collect';
   final _searchCtrl = TextEditingController();
+  final _inviteEmailCtrl = TextEditingController();
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _inviteEmailCtrl.dispose();
     super.dispose();
   }
 
-  void _showAddEntryDialog() {
+  String? get _uid => Supabase.instance.client.auth.currentUser?.id;
+
+  Future<void> _showAddEntrySheet(List<Map<String, dynamic>> connections, List<Map<String, dynamic>> groups) async {
     final nameCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
     String type = 'lent';
+    String? linkedUserId;
+    String? groupId;
+    final profile = ref.read(profileProvider).valueOrNull;
+    final currency = profile?['preferred_currency'] as String?;
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
+        builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: BillyTheme.gray300, borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 20),
-              const Text('Add Transaction', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-              const SizedBox(height: 20),
-              Row(
-                children: ['lent', 'borrowed'].map((t) {
-                  final isActive = type == t;
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => setSheetState(() => type = t),
-                      child: Container(
-                        margin: EdgeInsets.only(right: t == 'lent' ? 8 : 0, left: t == 'borrowed' ? 8 : 0),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isActive ? BillyTheme.emerald50 : BillyTheme.gray50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: isActive ? BillyTheme.emerald600 : BillyTheme.gray200),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          t == 'lent' ? 'I Lent' : 'I Borrowed',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: isActive ? BillyTheme.emerald700 : BillyTheme.gray500,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: BillyTheme.gray300, borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 20),
+                const Text('Add transaction', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+                const SizedBox(height: 16),
+                Row(
+                  children: ['lent', 'borrowed'].map((t) {
+                    final active = type == t;
+                    return Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(right: t == 'lent' ? 8 : 0, left: t == 'borrowed' ? 8 : 0),
+                        child: GestureDetector(
+                          onTap: () => setSheet(() => type = t),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: active ? BillyTheme.emerald50 : BillyTheme.gray50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: active ? BillyTheme.emerald600 : BillyTheme.gray200),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              t == 'lent' ? 'I lent' : 'I borrowed',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: active ? BillyTheme.emerald700 : BillyTheme.gray500),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Person name',
-                  filled: true,
-                  fillColor: BillyTheme.gray50,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.gray200)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.gray200)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.emerald600)),
+                    );
+                  }).toList(),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'Amount (\$)',
-                  filled: true,
-                  fillColor: BillyTheme.gray50,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.gray200)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.gray200)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: BillyTheme.emerald600)),
+                const SizedBox(height: 12),
+                if (connections.isNotEmpty) ...[
+                  DropdownButtonFormField<String?>(
+                    value: linkedUserId,
+                    decoration: const InputDecoration(labelText: 'Link to contact (optional)', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('No linked user')),
+                      ...connections.map((c) => DropdownMenuItem<String?>(
+                            value: c['other_user_id'] as String,
+                            child: Text(c['display_name'] as String),
+                          )),
+                    ],
+                    onChanged: (v) => setSheet(() => linkedUserId = v),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (groups.isNotEmpty) ...[
+                  DropdownButtonFormField<String?>(
+                    value: groupId,
+                    decoration: const InputDecoration(labelText: 'Group (optional)', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('No group')),
+                      ...groups.map((g) => DropdownMenuItem<String?>(
+                            value: g['id'] as String,
+                            child: Text(g['name'] as String? ?? 'Group'),
+                          )),
+                    ],
+                    onChanged: (v) => setSheet(() => groupId = v),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Counterparty name',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              GestureDetector(
-                onTap: () async {
-                  final name = nameCtrl.text.trim();
-                  final amount = double.tryParse(amountCtrl.text.trim());
-                  if (name.isEmpty || amount == null || amount <= 0) return;
-                  Navigator.of(ctx).pop();
-                  await ref.read(lendBorrowProvider.notifier).addEntry(
-                    counterpartyName: name,
-                    amount: amount,
-                    type: type,
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(color: BillyTheme.emerald600, borderRadius: BorderRadius.circular(14)),
-                  alignment: Alignment.center,
-                  child: const Text('Add', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Amount (${currency ?? 'USD'})',
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () async {
+                    final name = nameCtrl.text.trim();
+                    final amount = double.tryParse(amountCtrl.text.trim());
+                    if (name.isEmpty || amount == null || amount <= 0) return;
+                    Navigator.pop(ctx);
+                    await ref.read(lendBorrowProvider.notifier).addEntry(
+                          counterpartyName: name,
+                          amount: amount,
+                          type: type,
+                          counterpartyUserId: linkedUserId,
+                          groupId: groupId,
+                        );
+                  },
+                  style: FilledButton.styleFrom(backgroundColor: BillyTheme.emerald600, padding: const EdgeInsets.symmetric(vertical: 16)),
+                  child: const Text('Save'),
+                ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createGroupDialog(List<Map<String, dynamic>> connections) async {
+    final nameCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New group'),
+        content: TextField(controller: nameCtrl, decoration: const InputDecoration(hintText: 'Group name')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+        ],
+      ),
+    );
+    if (ok == true && nameCtrl.text.trim().isNotEmpty) {
+      final gid = await ref.read(expenseGroupsNotifierProvider.notifier).createGroup(nameCtrl.text.trim());
+      if (!mounted) return;
+      if (connections.isNotEmpty) {
+        await _pickMembersForGroup(gid, connections);
+      }
+    }
+    nameCtrl.dispose();
+  }
+
+  Future<void> _pickMembersForGroup(String groupId, List<Map<String, dynamic>> connections) async {
+    final chosen = <String>{};
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: const Text('Add members'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: connections.map((c) {
+                final id = c['other_user_id'] as String;
+                return CheckboxListTile(
+                  title: Text(c['display_name'] as String),
+                  value: chosen.contains(id),
+                  onChanged: (v) {
+                    setDialog(() {
+                      if (v == true) {
+                        chosen.add(id);
+                      } else {
+                        chosen.remove(id);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                for (final id in chosen) {
+                  await ref.read(expenseGroupsNotifierProvider.notifier).addMember(groupId: groupId, memberUserId: id);
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Done'),
+            ),
+          ],
         ),
       ),
     );
@@ -126,10 +225,19 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final uid = _uid;
     final lbAsync = ref.watch(lendBorrowProvider);
-    final splitsAsync = ref.watch(splitsProvider);
+    final invAsync = ref.watch(invitationsNotifierProvider);
+    final connAsync = ref.watch(connectionsNotifierProvider);
+    final groupsAsync = ref.watch(expenseGroupsNotifierProvider);
+    final profile = ref.watch(profileProvider).valueOrNull;
+    final currency = profile?['preferred_currency'] as String?;
+
     final entries = lbAsync.valueOrNull ?? [];
-    final splits = splitsAsync.valueOrNull ?? [];
+    final invitations = invAsync.valueOrNull ?? [];
+    final connections = connAsync.valueOrNull ?? [];
+    final groups = groupsAsync.valueOrNull ?? [];
+
     final pending = entries.where((e) => e['status'] == 'pending').toList();
 
     double collectTotal = 0;
@@ -144,15 +252,17 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
     }
 
     final filtered = pending.where((e) {
-      final type = e['type'] as String? ?? '';
-      if (_activeTab == 'collect') return type == 'lent';
-      return type == 'borrowed';
+      if (_activeTab == 'collect') return e['type'] == 'lent';
+      return e['type'] == 'borrowed';
     }).toList();
 
-    final search = _searchCtrl.text.toLowerCase();
-    final displayed = search.isEmpty
+    final q = _searchCtrl.text.toLowerCase();
+    final displayed = q.isEmpty
         ? filtered
-        : filtered.where((e) => (e['counterparty_name'] as String? ?? '').toLowerCase().contains(search)).toList();
+        : filtered.where((e) => (e['counterparty_name'] as String? ?? '').toLowerCase().contains(q)).toList();
+
+    final outgoing = invitations.where((i) => i['from_user_id'] == uid && i['status'] == 'pending').toList();
+    final incoming = invitations.where((i) => i['from_user_id'] != uid && i['status'] == 'pending').toList();
 
     return SingleChildScrollView(
       key: const ValueKey('friends'),
@@ -166,232 +276,241 @@ class _SplitScreenState extends ConsumerState<SplitScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(color: BillyTheme.emerald100, shape: BoxShape.circle),
-                child: const Icon(Icons.person_outline, size: 20, color: BillyTheme.emerald600),
+                child: const Icon(Icons.people_outline, size: 22, color: BillyTheme.emerald600),
               ),
               const SizedBox(width: 12),
-              const Text('Borrow & Lend Money', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-              const Spacer(),
-              _CircleBtn(icon: Icons.settings_outlined),
+              const Expanded(
+                child: Text('People & groups', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+              ),
             ],
           ),
-          const SizedBox(height: 20),
-
+          const SizedBox(height: 8),
+          const Text(
+            'Invite by email. After they accept, linked transactions are visible to both of you.',
+            style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _SummaryCard(
-                label: 'To Collect',
-                amount: collectTotal,
-                isActive: _activeTab == 'collect',
-                isCollect: true,
-                onTap: () => setState(() => _activeTab = 'collect'),
-              )),
-              const SizedBox(width: 12),
-              Expanded(child: _SummaryCard(
-                label: 'To Pay Back',
-                amount: payTotal,
-                isActive: _activeTab == 'pay',
-                isCollect: false,
-                onTap: () => setState(() => _activeTab = 'pay'),
-              )),
+              Expanded(
+                child: TextField(
+                  controller: _inviteEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    hintText: 'friend@email.com',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: invAsync.isLoading
+                    ? null
+                    : () async {
+                        final em = _inviteEmailCtrl.text.trim();
+                        if (em.isEmpty) return;
+                        try {
+                          await ref.read(invitationsNotifierProvider.notifier).inviteEmail(em);
+                          _inviteEmailCtrl.clear();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invitation sent')));
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                          }
+                        }
+                      },
+                style: FilledButton.styleFrom(backgroundColor: BillyTheme.emerald600),
+                child: const Text('Invite'),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
-
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: BillyTheme.gray100),
-            ),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'Name or ID of money lent to / from',
-                hintStyle: const TextStyle(fontSize: 14, color: BillyTheme.gray400),
-                prefixIcon: const Icon(Icons.search, size: 18, color: BillyTheme.gray400),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          ...displayed.map((e) {
-            final name = e['counterparty_name'] as String? ?? '';
-            final amount = (e['amount'] as num?)?.toDouble() ?? 0;
-            final type = e['type'] as String? ?? 'lent';
-            final id = e['id'] as String;
-            final isLent = type == 'lent';
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Dismissible(
-                key: ValueKey(id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  decoration: BoxDecoration(color: BillyTheme.emerald500, borderRadius: BorderRadius.circular(16)),
-                  child: const Text('Settle', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                ),
-                onDismissed: (_) => ref.read(lendBorrowProvider.notifier).settle(id),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: BillyTheme.gray50),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(color: BillyTheme.emerald100, shape: BoxShape.circle),
-                        alignment: Alignment.center,
-                        child: Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: BillyTheme.emerald600),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Icon(Icons.receipt_outlined, size: 12, color: BillyTheme.gray500),
-                                const SizedBox(width: 4),
-                                const Text('IRO', style: TextStyle(fontSize: 12, color: BillyTheme.gray500)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '\$${NumberFormat('#,##0.00').format(amount)}',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: isLent ? BillyTheme.emerald600 : BillyTheme.red500),
-                      ),
-                      const SizedBox(width: 10),
-                      GestureDetector(
-                        onTap: () => ref.read(lendBorrowProvider.notifier).settle(id),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isLent ? BillyTheme.emerald500 : BillyTheme.red500,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(isLent ? Icons.check : Icons.arrow_upward, size: 18, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }),
-
-          GestureDetector(
-            onTap: _showAddEntryDialog,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add, size: 18, color: BillyTheme.emerald600),
-                  const SizedBox(width: 8),
-                  Text('Add Transaction', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: BillyTheme.emerald600)),
-                ],
-              ),
-            ),
-          ),
-
-          if (splits.isNotEmpty) ...[
+          if (incoming.isNotEmpty) ...[
             const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Groups', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                const Icon(Icons.more_horiz, size: 20, color: BillyTheme.gray400),
-              ],
+            const Text('Invitations for you', style: TextStyle(fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+            const SizedBox(height: 8),
+            ...incoming.map((i) => _InvitationTile(
+                  title: 'Contact invitation',
+                  subtitle: i['to_email'] as String? ?? '',
+                  isIncoming: true,
+                  onAccept: () => ref.read(invitationsNotifierProvider.notifier).accept(i['id'] as String),
+                  onReject: () => ref.read(invitationsNotifierProvider.notifier).reject(i['id'] as String),
+                )),
+          ],
+          if (outgoing.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Sent invitations', style: TextStyle(fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+            const SizedBox(height: 8),
+            ...outgoing.map((i) => _InvitationTile(
+                  title: i['to_email'] as String? ?? '',
+                  subtitle: 'Waiting for them to accept',
+                  isIncoming: false,
+                  onCancel: () => ref.read(invitationsNotifierProvider.notifier).cancelOutgoing(i['id'] as String),
+                )),
+          ],
+          if (connections.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            const Text('Contacts', style: TextStyle(fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: connections
+                  .map((c) => Chip(
+                        label: Text(c['display_name'] as String),
+                        backgroundColor: BillyTheme.emerald50,
+                      ))
+                  .toList(),
             ),
-            const SizedBox(height: 12),
-            ...splits.map((s) {
-              final title = s['title'] as String? ?? 'Split';
-              final total = (s['total_amount'] as num?)?.toDouble() ?? 0;
-              final participants = (s['split_participants'] as List?) ?? [];
-
+          ],
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Groups', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+              TextButton.icon(
+                onPressed: () => _createGroupDialog(connections),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('New'),
+              ),
+            ],
+          ),
+          if (groups.isEmpty)
+            Text('No groups yet. Create one to organize shared expenses.', style: TextStyle(fontSize: 13, color: BillyTheme.gray500))
+          else
+            ...groups.map((g) {
+              final members = (g['expense_group_members'] as List?) ?? [];
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: BillyTheme.gray50),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(
-                    children: [
-                      _AvatarStack(count: participants.length),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                            Text('Splitting with ${participants.length} friends', style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
-                          ],
-                        ),
-                      ),
-                      Text('\$${total.toInt()} total', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.emerald600)),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.chevron_right, size: 16, color: BillyTheme.gray400),
-                    ],
-                  ),
+                child: ListTile(
+                  tileColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: BillyTheme.gray100)),
+                  title: Text(g['name'] as String? ?? 'Group'),
+                  subtitle: Text('${members.length} members'),
+                  trailing: connections.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.person_add_alt_outlined),
+                          onPressed: () => _pickMembersForGroup(g['id'] as String, connections),
+                        )
+                      : null,
                 ),
               );
             }),
-          ],
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryCard(
+                  label: 'To collect',
+                  amount: collectTotal,
+                  currencyCode: currency,
+                  active: _activeTab == 'collect',
+                  isCollect: true,
+                  onTap: () => setState(() => _activeTab = 'collect'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SummaryCard(
+                  label: 'To pay back',
+                  amount: payTotal,
+                  currencyCode: currency,
+                  active: _activeTab == 'pay',
+                  isCollect: false,
+                  onTap: () => setState(() => _activeTab = 'pay'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search by name',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...displayed.map((e) => _EntryRow(
+                entry: e,
+                currencyCode: currency,
+                onSettle: () => ref.read(lendBorrowProvider.notifier).settle(e['id'] as String),
+              )),
+          TextButton.icon(
+            onPressed: () => _showAddEntrySheet(connections, groups),
+            icon: const Icon(Icons.add),
+            label: const Text('Add transaction'),
+          ),
         ],
       ),
     );
   }
 }
 
-class _CircleBtn extends StatelessWidget {
-  const _CircleBtn({required this.icon});
-  final IconData icon;
+class _InvitationTile extends StatelessWidget {
+  const _InvitationTile({
+    required this.title,
+    required this.subtitle,
+    required this.isIncoming,
+    this.onAccept,
+    this.onReject,
+    this.onCancel,
+  });
+  final String title;
+  final String subtitle;
+  final bool isIncoming;
+  final VoidCallback? onAccept;
+  final VoidCallback? onReject;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: BillyTheme.gray100),
+    return Card(
+      child: ListTile(
+        title: Text(title),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        trailing: isIncoming
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(icon: const Icon(Icons.close, color: BillyTheme.red500), onPressed: onReject),
+                  IconButton(icon: const Icon(Icons.check, color: BillyTheme.emerald600), onPressed: onAccept),
+                ],
+              )
+            : TextButton(onPressed: onCancel, child: const Text('Cancel')),
       ),
-      child: Icon(icon, size: 20, color: BillyTheme.gray600),
     );
   }
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.label, required this.amount, required this.isActive, required this.isCollect, required this.onTap});
+  const _SummaryCard({
+    required this.label,
+    required this.amount,
+    required this.currencyCode,
+    required this.active,
+    required this.isCollect,
+    required this.onTap,
+  });
   final String label;
   final double amount;
-  final bool isActive;
+  final String? currencyCode;
+  final bool active;
   final bool isCollect;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final formatted = AppCurrency.format(amount, currencyCode);
     final activeGradient = isCollect
         ? [BillyTheme.green400, BillyTheme.emerald600]
         : [BillyTheme.red400, const Color(0xFFEF4444)];
@@ -401,13 +520,10 @@ class _SummaryCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: isActive ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: activeGradient) : null,
-          color: isActive ? null : Colors.white,
+          gradient: active ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: activeGradient) : null,
+          color: active ? null : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: isActive ? null : Border.all(color: BillyTheme.gray100),
-          boxShadow: isActive
-              ? [BoxShadow(color: (isCollect ? BillyTheme.emerald500 : BillyTheme.red400).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))]
-              : null,
+          border: active ? null : Border.all(color: BillyTheme.gray100),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,16 +533,16 @@ class _SummaryCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: isActive ? Colors.white.withValues(alpha: 0.8) : BillyTheme.gray500,
+                color: active ? Colors.white.withValues(alpha: 0.85) : BillyTheme.gray500,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              '\$${NumberFormat('#,##0.00').format(amount)}',
+              formatted,
               style: TextStyle(
-                fontSize: 24,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
-                color: isActive ? Colors.white : BillyTheme.gray600,
+                color: active ? Colors.white : BillyTheme.gray800,
               ),
             ),
           ],
@@ -436,57 +552,41 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _AvatarStack extends StatelessWidget {
-  const _AvatarStack({required this.count});
-  final int count;
-
-  static const _colors = [BillyTheme.emerald100, BillyTheme.blue400, BillyTheme.yellow400];
-  static const _textColors = [BillyTheme.emerald700, Colors.white, Color(0xFF92400E)];
+class _EntryRow extends StatelessWidget {
+  const _EntryRow({required this.entry, required this.currencyCode, required this.onSettle});
+  final Map<String, dynamic> entry;
+  final String? currencyCode;
+  final VoidCallback onSettle;
 
   @override
   Widget build(BuildContext context) {
-    final shown = count > 3 ? 2 : count;
-    final extra = count - shown;
+    final name = entry['counterparty_name'] as String? ?? '';
+    final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
+    final type = entry['type'] as String? ?? 'lent';
+    final isLent = type == 'lent';
+    final formatted = AppCurrency.format(amount, currencyCode);
 
-    return SizedBox(
-      width: 28.0 * shown + (extra > 0 ? 28 : 0),
-      height: 40,
-      child: Stack(
-        children: [
-          for (int i = 0; i < shown; i++)
-            Positioned(
-              left: i * 20.0,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _colors[i % _colors.length],
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  String.fromCharCode(65 + i),
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _textColors[i % _textColors.length]),
-                ),
-              ),
-            ),
-          if (extra > 0)
-            Positioned(
-              left: shown * 20.0,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: BillyTheme.yellow400.withValues(alpha: 0.3),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                alignment: Alignment.center,
-                child: Text('+$extra', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
-              ),
-            ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: BillyTheme.gray100)),
+          leading: CircleAvatar(
+            backgroundColor: BillyTheme.emerald50,
+            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: BillyTheme.emerald600)),
+          ),
+          title: Text(name),
+          subtitle: entry['counterparty_user_id'] != null ? const Text('Linked contact', style: TextStyle(fontSize: 11)) : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(formatted, style: TextStyle(fontWeight: FontWeight.w700, color: isLent ? BillyTheme.emerald600 : BillyTheme.red500)),
+              IconButton(icon: const Icon(Icons.check_circle_outline), onPressed: onSettle),
+            ],
+          ),
+        ),
       ),
     );
   }

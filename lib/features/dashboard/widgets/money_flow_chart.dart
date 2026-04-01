@@ -10,7 +10,38 @@ class MoneyFlowChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chartData = data.isEmpty ? [2000, 2200, 2700, 2400, 3000, 3200, 3500].map((e) => e.toDouble()).toList() : data;
+    if (data.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Money Flow',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(24),
+            height: 140,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: BillyTheme.gray50),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: const Text(
+              'No spending in the last 7 days',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: BillyTheme.gray500),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final chartData = data;
     final spots = chartData.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList();
     final maxY = chartData.reduce((a, b) => a > b ? a : b) * 1.3;
 
@@ -71,9 +102,7 @@ class MoneyFlowChart extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _Dot(color: BillyTheme.emerald500, label: 'Income'),
-                  const SizedBox(width: 16),
-                  _Dot(color: BillyTheme.red400, label: 'Expenses'),
+                  _Dot(color: BillyTheme.emerald500, label: 'Daily spend'),
                 ],
               ),
             ],

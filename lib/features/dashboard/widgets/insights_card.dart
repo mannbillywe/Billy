@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 
 class InsightsCard extends StatelessWidget {
@@ -8,10 +9,12 @@ class InsightsCard extends StatelessWidget {
     super.key,
     required this.totalExpenses,
     required this.categories,
+    this.currencyCode,
   });
 
   final double totalExpenses;
   final List<(String, double)> categories;
+  final String? currencyCode;
 
   static const _categoryColors = [
     BillyTheme.green400,
@@ -22,6 +25,35 @@ class InsightsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (categories.isEmpty || totalExpenses <= 0) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Spending by category',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(24),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: BillyTheme.gray50),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: const Text(
+              'Add expenses to see categories',
+              style: TextStyle(fontSize: 13, color: BillyTheme.gray500),
+            ),
+          ),
+        ],
+      );
+    }
+
     final pieData = categories.asMap().entries.map((e) {
       return PieChartSectionData(
         value: e.value.$2 * 100,
@@ -31,15 +63,13 @@ class InsightsCard extends StatelessWidget {
       );
     }).toList();
 
-    if (pieData.isEmpty) {
-      pieData.add(PieChartSectionData(value: 100, color: BillyTheme.gray200, radius: 16, showTitle: false));
-    }
+    final centerLabel = AppCurrency.format(totalExpenses, currencyCode);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Monthly Spending',
+          'Spending by category',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
         ),
         const SizedBox(height: 12),
@@ -69,8 +99,8 @@ class InsightsCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '\$${totalExpenses.toInt()}',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+                      centerLabel,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
                     ),
                   ],
                 ),

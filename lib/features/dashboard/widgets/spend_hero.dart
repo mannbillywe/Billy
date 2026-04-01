@@ -1,22 +1,29 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 
+/// Hero card using real aggregates (no placeholder balance).
 class SpendHero extends StatelessWidget {
   const SpendHero({
     super.key,
-    required this.balance,
+    required this.weekSpend,
+    required this.currencyCode,
     this.weeklyData = const [],
+    this.lastWeekSpend = 0,
   });
 
-  final double balance;
+  final double weekSpend;
+  final String? currencyCode;
   final List<double> weeklyData;
+  final double lastWeekSpend;
 
   @override
   Widget build(BuildContext context) {
-    final formatter = NumberFormat.currency(locale: 'en_US', symbol: '\$', decimalDigits: 2);
+    final formatted = AppCurrency.format(weekSpend, currencyCode);
+    final changePct = lastWeekSpend > 0 ? (((weekSpend - lastWeekSpend) / lastWeekSpend) * 100).round().abs() : null;
+    final isUp = weekSpend >= lastWeekSpend;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -35,7 +42,7 @@ class SpendHero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Your Balance',
+                'This week',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -44,19 +51,28 @@ class SpendHero extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                formatter.format(balance),
+                formatted,
                 style: const TextStyle(
                   fontSize: 36,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF064E3B),
                 ),
               ),
-              const SizedBox(height: 20),
+              if (changePct != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${isUp ? 'Up' : 'Down'} $changePct% vs last week',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: isUp ? BillyTheme.red400 : BillyTheme.emerald600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
               Row(
                 children: [
-                  _LegendDot(color: BillyTheme.emerald500, label: 'Income'),
-                  const SizedBox(width: 16),
-                  _LegendDot(color: BillyTheme.red400, label: 'Expenses'),
+                  _LegendDot(color: BillyTheme.emerald500, label: '7-day spend trend'),
                 ],
               ),
             ],

@@ -8,6 +8,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../export/models/export_document.dart';
 import '../../export/screens/export_screen.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/profile_provider.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -51,7 +52,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             onPressed: () async {
               final val = ctrl.text.trim();
               await SupabaseService.updateProfile(geminiApiKey: val.isEmpty ? '' : val);
-              if (ctx.mounted) Navigator.pop(ctx);
+              if (ctx.mounted) {
+                ref.invalidate(profileProvider);
+                Navigator.pop(ctx);
+              }
             },
             child: Text('Save', style: TextStyle(color: BillyTheme.emerald600)),
           ),
@@ -81,7 +85,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final totalDocs = docs.length;
 
-    return SingleChildScrollView(
+    return Scaffold(
+      backgroundColor: BillyTheme.scaffoldBg,
+      appBar: AppBar(
+        backgroundColor: BillyTheme.scaffoldBg,
+        elevation: 0,
+        title: const Text('Account', style: TextStyle(color: BillyTheme.gray800, fontWeight: FontWeight.w700)),
+        iconTheme: const IconThemeData(color: BillyTheme.gray800),
+      ),
+      body: SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,6 +169,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

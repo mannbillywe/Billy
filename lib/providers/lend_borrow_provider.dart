@@ -16,12 +16,16 @@ class LendBorrowNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     required double amount,
     required String type,
     String? notes,
+    String? counterpartyUserId,
+    String? groupId,
   }) async {
     await SupabaseService.insertLendBorrow(
       counterpartyName: counterpartyName,
       amount: amount,
       type: type,
       notes: notes,
+      counterpartyUserId: counterpartyUserId,
+      groupId: groupId,
     );
     await refresh();
   }

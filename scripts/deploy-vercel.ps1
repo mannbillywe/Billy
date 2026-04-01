@@ -8,8 +8,20 @@ $buildWeb = Join-Path $projectRoot "build\web"
 
 Write-Host "Building Flutter web..." -ForegroundColor Cyan
 Set-Location $projectRoot
-& "C:\Users\mannt\AppData\Local\flutter\bin\flutter.bat" build web --release
+$flutter = Get-Command flutter -ErrorAction SilentlyContinue
+if (-not $flutter) {
+    Write-Host "flutter not on PATH. Install Flutter or add it to PATH." -ForegroundColor Red
+    exit 1
+}
+& flutter build web --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# SPA fallback for Flutter web client routing
+$vercelSrc = Join-Path $projectRoot "web\vercel.json"
+$vercelDst = Join-Path $buildWeb "vercel.json"
+if (Test-Path $vercelSrc) {
+    Copy-Item -Force $vercelSrc $vercelDst
+}
 
 if (-not (Test-Path $buildWeb)) {
     Write-Host "Build failed: build/web not found" -ForegroundColor Red

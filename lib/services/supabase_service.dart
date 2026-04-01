@@ -62,6 +62,8 @@ class SupabaseService {
     required String type,
     String? notes,
     String? dueDate,
+    String? counterpartyUserId,
+    String? groupId,
   }) async {
     if (_uid == null) return;
     await _client.from('lend_borrow_entries').insert({
@@ -71,6 +73,8 @@ class SupabaseService {
       'type': type,
       'notes': notes,
       'due_date': dueDate,
+      if (counterpartyUserId != null) 'counterparty_user_id': counterpartyUserId,
+      if (groupId != null) 'group_id': groupId,
     });
   }
 
@@ -149,13 +153,96 @@ class SupabaseService {
     }
   }
 
-  static Future<void> updateProfile({String? displayName, String? avatarUrl, String? geminiApiKey}) async {
+  static Future<void> updateProfile({
+    String? displayName,
+    String? avatarUrl,
+    String? geminiApiKey,
+    String? preferredCurrency,
+  }) async {
     if (_uid == null) return;
     final updates = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
     if (displayName != null) updates['display_name'] = displayName;
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
     if (geminiApiKey != null) updates['gemini_api_key'] = geminiApiKey;
+    if (preferredCurrency != null) updates['preferred_currency'] = preferredCurrency;
     await _client.from('profiles').update(updates).eq('id', _uid!);
+  }
+
+  // ─── Social: invitations & connections ───────────────────────────
+  static Future<void> syncInvitationRecipient() async {
+    if (_uid == null) return;
+    try {
+      await _client.rpc('sync_invitation_recipient');
+    } catch (_) {}
+  }
+
+  static Future<String?> inviteContactByEmail(String email) async {
+    if (_uid == null) return null;
+    final res = await _client.rpc('invite_contact_by_email', params: {'p_email': email.trim()});
+    return res?.toString();
+  }
+
+  static Future<void> acceptContactInvitation(String invitationId) async {
+    await _client.rpc('accept_contact_invitation', params: {'p_invitation_id': invitationId});
+  }
+
+  static Future<void> rejectContactInvitation(String invitationId) async {
+    await _client.rpc('reject_contact_invitation', params: {'p_invitation_id': invitationId});
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchContactInvitations() async {
+    if (_uid == null) return [];
+    final res = await _client.from('contact_invitations').select().order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchUserConnections() async {
+    final uid = _uid;
+    if (uid == null) return [];
+    final res = await _client
+        .from('user_connections')
+        .select()
+        .or('user_low.eq.$uid,user_high.eq.$uid');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<Map<String, dynamic>?> fetchProfileById(String userId) async {
+    try {
+      final res = await _client.from('profiles').select().eq('id', userId).maybeSingle();
+      return res;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ─── Expense groups ──────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> fetchExpenseGroups() async {
+    if (_uid == null) return [];
+    final res = await _client
+        .from('expense_groups')
+        .select('*, expense_group_members(*)')
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<Map<String, dynamic>> createExpenseGroup({required String name}) async {
+    if (_uid == null) throw StateError('Not signed in');
+    final row = await _client
+        .from('expense_groups')
+        .insert({'name': name, 'created_by': _uid})
+        .select()
+        .single();
+    final gid = row['id'] as String;
+    await _client.from('expense_group_members').insert({'group_id': gid, 'user_id': _uid, 'role': 'owner'});
+    return Map<String, dynamic>.from(row);
+  }
+
+  static Future<void> addUserToExpenseGroup({required String groupId, required String memberUserId}) async {
+    await _client.from('expense_group_members').insert({'group_id': groupId, 'user_id': memberUserId});
+  }
+
+  static Future<void> cancelOutgoingInvitation(String invitationId) async {
+    await _client.from('contact_invitations').update({'status': 'cancelled'}).eq('id', invitationId);
   }
 
   // ─── Connected Apps ──────────────────────────────────────────────

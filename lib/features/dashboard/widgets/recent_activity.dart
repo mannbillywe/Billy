@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 
 class RecentActivityItem {
@@ -20,14 +20,13 @@ class RecentActivityItem {
 }
 
 class RecentActivity extends StatelessWidget {
-  const RecentActivity({super.key, required this.items});
+  const RecentActivity({super.key, required this.items, this.currencyCode});
 
   final List<RecentActivityItem> items;
+  final String? currencyCode;
 
   @override
   Widget build(BuildContext context) {
-    final formatter = NumberFormat.currency(locale: 'en_US', symbol: '\$');
-
     return Column(
       children: items.map((item) {
         return Padding(
@@ -75,7 +74,7 @@ class RecentActivity extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '-${formatter.format(item.amount)}',
+                  '-${AppCurrency.format(item.amount, currencyCode)}',
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
                 ),
               ],
