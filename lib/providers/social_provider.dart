@@ -24,6 +24,7 @@ class InvitationsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   }
 
   Future<void> accept(String id) async {
+    await SupabaseService.syncInvitationRecipient();
     await SupabaseService.acceptContactInvitation(id);
     await refresh();
     await ref.read(connectionsNotifierProvider.notifier).refresh();
