@@ -47,6 +47,27 @@ class SupabaseService {
     await _client.from('documents').delete().eq('id', id);
   }
 
+  // ─── Invoices (OCR pipeline) ───────────────────────────────────
+  /// Persists user edits after review; sets status `confirmed` and replaces line items.
+  static Future<void> syncInvoiceAfterReview({
+    required String invoiceId,
+    required Map<String, dynamic> header,
+    required List<Map<String, dynamic>> itemRows,
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    await _client.from('invoice_items').delete().eq('invoice_id', invoiceId);
+    if (itemRows.isNotEmpty) {
+      await _client.from('invoice_items').insert(itemRows);
+    }
+    await _client.from('invoices').update({
+      ...header,
+      'status': 'confirmed',
+      'review_required': false,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', invoiceId).eq('user_id', uid);
+  }
+
   // ─── Lend / Borrow ──────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchLendBorrow() async {
     final uid = _uid;

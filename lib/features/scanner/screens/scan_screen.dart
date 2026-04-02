@@ -1,11 +1,14 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/logging/billy_logger.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../../invoices/services/invoice_ocr_pipeline.dart';
 import '../models/extracted_receipt.dart';
-import '../services/invoice_extraction_service.dart';
 import '../widgets/scan_error.dart';
 import '../widgets/scan_idle.dart';
 import '../widgets/scan_processing.dart';
@@ -21,47 +24,44 @@ class ScanScreen extends ConsumerStatefulWidget {
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   ScanState _state = ScanState.idle;
   ExtractedReceipt? _extracted;
+  String? _invoiceId;
   String? _errorMessage;
   bool _extractInFlight = false;
 
-  String _mimeTypeForFile(XFile file) {
-    final p = file.name.toLowerCase();
+  String _mimeTypeForPath(String name) {
+    final p = name.toLowerCase();
     if (p.endsWith('.png')) return 'image/png';
     if (p.endsWith('.webp')) return 'image/webp';
     if (p.endsWith('.gif')) return 'image/gif';
+    if (p.endsWith('.pdf')) return 'application/pdf';
     return 'image/jpeg';
   }
 
-  /// Exactly one edge-function (→ one Gemini) call per successful image pick.
-  Future<void> _pickAndExtract(ImageSource source) async {
+  Future<void> _runPipeline({
+    required List<int> bytes,
+    required String fileName,
+    required String mime,
+    required String source,
+  }) async {
     if (_extractInFlight) return;
-
-    final picker = ImagePicker();
-    final XFile? file = await picker.pickImage(
-      source: source,
-      maxWidth: 1920,
-      imageQuality: 85,
-    );
-
-    if (file == null) return;
-
     setState(() {
       _extractInFlight = true;
       _state = ScanState.processing;
       _errorMessage = null;
     });
-
     try {
-      final bytes = await file.readAsBytes();
-      final mime = _mimeTypeForFile(file);
-      BillyLogger.info('scan: picked image ${bytes.length} bytes, single extract-invoice call');
-      final receipt = await InvoiceExtractionService.extractOnce(bytes, mimeType: mime);
-
+      final result = await InvoiceOcrPipeline.uploadAndProcess(
+        bytes: Uint8List.fromList(bytes),
+        fileName: fileName,
+        mimeType: mime,
+        source: source,
+      );
       if (!mounted) return;
       setState(() {
         _extractInFlight = false;
         _state = ScanState.success;
-        _extracted = receipt;
+        _extracted = result.receipt;
+        _invoiceId = result.invoiceId;
       });
     } catch (e, stack) {
       BillyLogger.extractionFailed(e, stack);
@@ -74,13 +74,53 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
   }
 
+  /// Camera / gallery — image only (compressed).
+  Future<void> _pickAndExtract(ImageSource source) async {
+    if (_extractInFlight) return;
+    final picker = ImagePicker();
+    final XFile? file = await picker.pickImage(
+      source: source,
+      maxWidth: 1920,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    final mime = _mimeTypeForPath(file.name);
+    final src = source == ImageSource.camera ? 'camera' : 'gallery';
+    await _runPipeline(bytes: bytes, fileName: file.name, mime: mime, source: src);
+  }
+
   Future<void> _pickFromGallery() => _pickAndExtract(ImageSource.gallery);
   Future<void> _openCamera() => _pickAndExtract(ImageSource.camera);
+
+  /// PDF / image file (desktop & mobile).
+  Future<void> _pickFile() async {
+    if (_extractInFlight) return;
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return;
+    final f = res.files.first;
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      setState(() {
+        _state = ScanState.error;
+        _errorMessage = 'Could not read file bytes';
+      });
+      return;
+    }
+    final name = f.name;
+    final mime = _mimeTypeForPath(name);
+    await _runPipeline(bytes: bytes, fileName: name, mime: mime, source: 'file');
+  }
 
   void _discard() {
     setState(() {
       _state = ScanState.idle;
       _extracted = null;
+      _invoiceId = null;
       _errorMessage = null;
     });
   }
@@ -121,12 +161,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   key: const ValueKey('idle'),
                   onCamera: _extractInFlight ? () {} : _openCamera,
                   onPhotoLibrary: _extractInFlight ? () {} : _pickFromGallery,
-                  onUploadPdf: _extractInFlight ? () {} : _pickFromGallery,
+                  onUploadPdf: _extractInFlight ? () {} : _pickFile,
                 ),
               ScanState.processing => const ScanProcessing(key: ValueKey('processing')),
               ScanState.success => ScanReviewPanel(
                   key: const ValueKey('review'),
                   initialReceipt: _extracted!,
+                  invoiceId: _invoiceId,
                   onDiscard: _discard,
                   onDone: _onSaveDone,
                 ),

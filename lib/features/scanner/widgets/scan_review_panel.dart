@@ -19,11 +19,14 @@ class ScanReviewPanel extends ConsumerStatefulWidget {
   const ScanReviewPanel({
     super.key,
     required this.initialReceipt,
+    this.invoiceId,
     required this.onDiscard,
     required this.onDone,
   });
 
   final ExtractedReceipt initialReceipt;
+  /// When set, header + line items are written back to `invoices` / `invoice_items`.
+  final String? invoiceId;
   final VoidCallback onDiscard;
   /// After successful save (e.g. pop route + snackbar handled by parent).
   final VoidCallback onDone;
@@ -178,7 +181,49 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
               'assigned_user_id': i < _lineAssignee.length ? _lineAssignee[i] : null,
             }
         ]
-        ..['allocation_total'] = alloc;
+        ..['allocation_total'] = alloc
+        ..['invoice_id'] = widget.invoiceId;
+
+      if (widget.invoiceId != null) {
+        final iid = widget.invoiceId!;
+        final itemRows = <Map<String, dynamic>>[];
+        for (var i = 0; i < draft.lineItems.length; i++) {
+          if (i >= _lineOn.length || !_lineOn[i]) continue;
+          final li = draft.lineItems[i];
+          itemRows.add({
+            'invoice_id': iid,
+            'user_id': uid,
+            'assigned_user_id': _useGroup ? _lineAssignee[i] : null,
+            'description': li.description,
+            'quantity': li.quantity,
+            'unit_price': li.unitPrice,
+            'amount': li.total,
+            'tax_percent': li.taxPercent,
+            'tax_amount': li.taxAmount,
+            'item_code': li.hsnCode,
+            'category': li.category,
+          });
+        }
+        await SupabaseService.syncInvoiceAfterReview(
+          invoiceId: iid,
+          header: {
+            'vendor_name': draft.vendorName.isNotEmpty ? draft.vendorName : 'Invoice',
+            'invoice_number': draft.invoiceNumber,
+            'invoice_date': draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().split('T').first,
+            'vendor_gstin': draft.vendorGstin,
+            'subtotal': draft.subtotal,
+            'cgst': draft.cgst,
+            'sgst': draft.sgst,
+            'igst': draft.igst,
+            'discount': draft.discount,
+            'total_tax': draft.tax,
+            'total': draft.total,
+            'currency': draft.currency,
+            'payment_status': draft.paymentStatus,
+          },
+          itemRows: itemRows,
+        );
+      }
 
       await ref.read(documentsProvider.notifier).addDocument(
             vendorName: draft.vendorName.isNotEmpty ? draft.vendorName : 'Invoice',

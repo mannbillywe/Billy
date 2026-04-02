@@ -141,6 +141,74 @@ class ExtractedReceipt {
     );
   }
 
+  /// From `process-invoice` Edge Function (`invoices` + `invoice_items` rows).
+  factory ExtractedReceipt.fromInvoiceOcr(
+    Map<String, dynamic> inv,
+    List<Map<String, dynamic>> items,
+  ) {
+    String dateStr = '';
+    final idate = inv['invoice_date'];
+    if (idate != null) {
+      dateStr = idate.toString().split('T').first;
+    }
+    if (dateStr.isEmpty) {
+      dateStr = DateTime.now().toIso8601String().split('T').first;
+    }
+
+    final lineItems = items.map((row) {
+      final qtyNum = (row['quantity'] as num?)?.toDouble() ?? 1;
+      var q = qtyNum.round();
+      if (q < 1) q = 1;
+      if (q > 999999) q = 999999;
+      return LineItem(
+        description: row['description'] as String? ?? '',
+        quantity: q,
+        unitPrice: (row['unit_price'] as num?)?.toDouble(),
+        total: (row['amount'] as num?)?.toDouble() ?? 0,
+        hsnCode: row['item_code'] as String?,
+        category: row['category'] as String?,
+        taxPercent: (row['tax_percent'] as num?)?.toDouble(),
+        taxAmount: (row['tax_amount'] as num?)?.toDouble(),
+      );
+    }).toList();
+
+    final cgst = (inv['cgst'] as num?)?.toDouble() ?? 0;
+    final sgst = (inv['sgst'] as num?)?.toDouble() ?? 0;
+    final igst = (inv['igst'] as num?)?.toDouble() ?? 0;
+    final totalTaxField = (inv['total_tax'] as num?)?.toDouble() ?? 0;
+    final explicit = cgst + sgst + igst;
+    final combinedTax = explicit > 0 ? explicit : totalTaxField;
+
+    final conf = inv['confidence'];
+    var confidence = 'medium';
+    if (conf is num) {
+      if (conf >= 0.85) confidence = 'high';
+      if (conf < 0.5) confidence = 'low';
+    }
+
+    final vendor = (inv['vendor_name'] as String?)?.trim();
+    return ExtractedReceipt(
+      vendorName: (vendor != null && vendor.isNotEmpty) ? vendor : 'Unknown',
+      date: dateStr,
+      invoiceNumber: inv['invoice_number'] as String?,
+      lineItems: lineItems,
+      subtotal: (inv['subtotal'] as num?)?.toDouble() ?? 0,
+      tax: combinedTax,
+      total: (inv['total'] as num?)?.toDouble() ?? 0,
+      currency: inv['currency'] as String? ?? 'INR',
+      category: null,
+      paymentMethod: null,
+      vendorGstin: inv['vendor_gstin'] as String?,
+      cgst: cgst,
+      sgst: sgst,
+      igst: igst,
+      discount: (inv['discount'] as num?)?.toDouble() ?? 0,
+      paymentStatus: inv['payment_status'] as String?,
+      notes: null,
+      confidence: confidence,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'vendor_name': vendorName,
         'invoice_date': date,
@@ -188,6 +256,8 @@ class LineItem {
     required this.total,
     this.hsnCode,
     this.category,
+    this.taxPercent,
+    this.taxAmount,
   });
 
   final String description;
@@ -196,6 +266,8 @@ class LineItem {
   final double total;
   final String? hsnCode;
   final String? category;
+  final double? taxPercent;
+  final double? taxAmount;
 
   LineItem copyWith({
     String? description,
@@ -204,6 +276,8 @@ class LineItem {
     double? total,
     String? hsnCode,
     String? category,
+    double? taxPercent,
+    double? taxAmount,
   }) {
     return LineItem(
       description: description ?? this.description,
@@ -212,6 +286,8 @@ class LineItem {
       total: total ?? this.total,
       hsnCode: hsnCode ?? this.hsnCode,
       category: category ?? this.category,
+      taxPercent: taxPercent ?? this.taxPercent,
+      taxAmount: taxAmount ?? this.taxAmount,
     );
   }
 
@@ -223,6 +299,8 @@ class LineItem {
       total: (json['amount'] as num?)?.toDouble() ?? (json['total'] as num?)?.toDouble() ?? 0,
       hsnCode: json['hsn_code'] as String?,
       category: json['category'] as String?,
+      taxPercent: (json['tax_percent'] as num?)?.toDouble(),
+      taxAmount: (json['tax_amount'] as num?)?.toDouble(),
     );
   }
 
@@ -233,5 +311,7 @@ class LineItem {
         'amount': total,
         'hsn_code': hsnCode,
         'category': category,
+        'tax_percent': taxPercent,
+        'tax_amount': taxAmount,
       };
 }

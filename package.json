@@ -1,0 +1,10 @@
+{
+  "name": "billy",
+  "private": true,
+  "scripts": {
+    "supabase:deploy-process-invoice": "supabase functions deploy process-invoice --project-ref wpzopkigbbldcfpxuvcm"
+  },
+  "devDependencies": {
+    "supabase": "^2.45.0"
+  }
+}

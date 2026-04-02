@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# Node (Supabase CLI)
+node_modules/
+supabase/.temp/
+
 # Flutter
 .dart_tool/
 .packages
