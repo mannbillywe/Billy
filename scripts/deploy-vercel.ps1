@@ -13,7 +13,8 @@ if (-not $flutter) {
     Write-Host "flutter not on PATH. Install Flutter or add it to PATH." -ForegroundColor Red
     exit 1
 }
-& flutter build web --release
+# --pwa-strategy=none: avoid service worker serving stale JS (old Edge function names / broken scan on iOS).
+& flutter build web --release --pwa-strategy=none
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # SPA fallback for Flutter web client routing

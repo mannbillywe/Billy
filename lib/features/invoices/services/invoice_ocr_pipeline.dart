@@ -42,7 +42,9 @@ class InvoiceOcrPipeline {
     final safeName = _sanitizeFileName(fileName);
     final path = '$uid/$y/$m/$invoiceId/$safeName';
 
-    BillyLogger.info('invoice-ocr: upload $path (${bytes.length} bytes)');
+    BillyLogger.info(
+      'invoice-ocr: upload $path (${bytes.length} bytes) → invoke process-invoice',
+    );
 
     await client.storage.from(_bucket).uploadBinary(
           path,

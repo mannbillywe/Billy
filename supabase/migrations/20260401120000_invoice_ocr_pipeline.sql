@@ -1,4 +1,4 @@
--- Invoice OCR pipeline: Storage + Edge Function + Document AI + structured tables
+-- Invoice OCR pipeline: Storage + Edge Function (Gemini) + structured tables
 -- Bucket: invoice-files — paths: {user_id}/yyyy/mm/{invoice_id}/{filename}
 
 create or replace function public.set_invoice_updated_at()

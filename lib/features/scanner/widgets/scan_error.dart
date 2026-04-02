@@ -14,6 +14,14 @@ class ScanError extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onBack;
 
+  static bool _showCacheHint(String message) {
+    final m = message.toLowerCase();
+    return m.contains('extract-invoice') ||
+        m.contains('load failed') ||
+        m.contains('failed host lookup') ||
+        m.contains('clientexception');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -38,6 +46,18 @@ class ScanError extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(message, style: const TextStyle(color: BillyTheme.gray700, height: 1.4)),
+              if (_showCacheHint(message)) ...[
+                const SizedBox(height: 14),
+                Text(
+                  'If you just updated the app, pull down to refresh this page or clear Safari '
+                  'website data for this site so the latest version runs (old copies may call the wrong API).',
+                  style: TextStyle(
+                    color: BillyTheme.gray600,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

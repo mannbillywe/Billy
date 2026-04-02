@@ -1,4 +1,4 @@
-/// Gemini model name reference only. API calls run in Supabase Edge Function `extract-invoice`.
+/// Gemini model name reference only. API calls run in Supabase Edge Function `process-invoice`.
 class GeminiConfig {
   GeminiConfig._();
 

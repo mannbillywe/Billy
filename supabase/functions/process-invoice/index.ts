@@ -10,7 +10,7 @@ const GEMINI_MODEL = "gemini-2.0-flash";
 
 type Json = Record<string, unknown>;
 
-const EXTRACTION_PROMPT = `You are an expert invoice and bill data extractor. Analyze this document (image or PDF).
+const EXTRACTION_PROMPT = `You are an expert invoice, bill, and café/restaurant receipt extractor. Analyze this image or PDF (may be crumpled or angled).
 
 Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
 
@@ -18,7 +18,10 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
   "invoices": [
     {
       "invoice_number": "",
+      "bill_number": "",
       "invoice_date": "YYYY-MM-DD",
+      "time_of_sale": "",
+      "cashier": "",
       "due_date": "",
       "vendor_name": "",
       "vendor_address": "",
@@ -29,20 +32,24 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
       "buyer_address": "",
       "buyer_gstin": "",
       "line_items": [
-        {"description": "", "quantity": 1, "unit_price": 0, "amount": 0, "hsn_code": "", "category": ""}
+        {"description": "", "quantity": 1, "unit_price": 0, "amount": 0, "hsn_code": "", "category": "Food & Beverage"}
       ],
       "subtotal": 0,
+      "service_charge": 0,
       "discount": 0,
       "gst": 0,
       "cgst": 0,
       "sgst": 0,
       "igst": 0,
       "other_taxes": 0,
+      "round_off": 0,
+      "tip": 0,
       "total_amount": 0,
       "currency": "INR",
       "category": "",
       "payment_method": "",
       "payment_status": "",
+      "fssai_license": "",
       "notes": ""
     }
   ],
@@ -51,8 +58,12 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
 }
 
 Rules:
-- Use first invoice if multiple; still list all in invoices if present.
-- Missing text fields: "". Missing numbers: 0.
+- Indian receipts: capture printed CGST and SGST separately when shown (e.g. 2.5% each); include service charge and round off when printed.
+- Map bill / receipt numbers to bill_number; invoice_number can match bill_number if only one number exists.
+- Dates like DD/MM/YY → convert to YYYY-MM-DD (assume 20YY for two-digit years).
+- Line items: every product row with qty, unit price, line amount.
+- FSSAI / license numbers → fssai_license.
+- Missing text: "". Missing numbers: 0.
 - Amounts as numbers (strip ₹, Rs, commas).
 - extraction_confidence: "high", "medium", or "low".
 - Return ONLY valid JSON.`;
@@ -181,10 +192,31 @@ function normalizeFromGeminiJson(
     num(inv.total_amount) ?? num(inv.total) ?? num(inv.amount_due);
   const subtotal = num(inv.subtotal);
 
+  const invNo =
+    str(inv.invoice_number) ?? str(inv.bill_number) ?? str(inv.receipt_number);
+
+  const metaBits: string[] = [];
+  const svc = num(inv.service_charge);
+  if (svc != null && svc > 0) metaBits.push(`service_charge=${svc}`);
+  const ro = num(inv.round_off);
+  if (ro != null && ro !== 0) metaBits.push(`round_off=${ro}`);
+  const tip = num(inv.tip);
+  if (tip != null && tip > 0) metaBits.push(`tip=${tip}`);
+  const cashier = str(inv.cashier);
+  if (cashier) metaBits.push(`cashier=${cashier}`);
+  const tos = str(inv.time_of_sale);
+  if (tos) metaBits.push(`time=${tos}`);
+  const fssai = str(inv.fssai_license);
+  if (fssai) metaBits.push(`FSSAI=${fssai}`);
+  const notes = str(inv.notes);
+  if (notes) metaBits.push(notes);
+  const meta = metaBits.length > 0 ? `[${metaBits.join(" | ")}]\n` : "";
+  const body = rawSnippet.length > 12000 ? rawSnippet.slice(0, 12000) : rawSnippet;
+
   return {
     vendor_name: str(inv.vendor_name),
     vendor_gstin: str(inv.vendor_gstin),
-    invoice_number: str(inv.invoice_number),
+    invoice_number: invNo,
     invoice_date: parseDateIso(str(inv.invoice_date) ?? undefined),
     due_date: parseDateIso(str(inv.due_date) ?? undefined),
     subtotal,
@@ -197,9 +229,9 @@ function normalizeFromGeminiJson(
     total,
     currency: str(inv.currency) ?? "INR",
     payment_status: str(inv.payment_status),
-    raw_text: rawSnippet.length > 12000 ? rawSnippet.slice(0, 12000) : rawSnippet,
+    raw_text: meta + body,
     confidence,
-    document_type: str(inv.category) ?? "invoice",
+    document_type: str(inv.category) ?? "receipt",
     line_items,
   };
 }
