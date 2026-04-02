@@ -282,10 +282,19 @@ State machine: `idle` → `processing` → `success` | `error`
 
 **Category source:** first segment of `documents.description` split by `,`, same as dashboard insights.
 
-### 8.2 AI Insights (document-backed, cost-controlled)
+### 8.2 Document history filters (Phase A1)
+
+**File:** `lib/features/documents/models/document_list_models.dart` — chips on **All documents**:
+
+- **Needs review** — OCR-linked rows with `extraction_confidence` low or `user_flagged_mismatch`
+- **Group** — saved with group split intent (`intent_group_expense` + non-empty `group_id` in `extracted_data`)
+- **Lend/borrow** — `intent_lend_borrow` in `extracted_data`
+
+### 8.3 AI Insights (document-backed, cost-controlled)
 
 - **UI:** `lib/features/analytics/widgets/ai_insights_panel.dart`, state: `lib/features/analytics/providers/analytics_insights_provider.dart`
 - **On entering AI Insights:** loads last row from `analytics_insight_snapshots` for the current preset (`SupabaseService.fetchAnalyticsInsightSnapshot`) — **read only**, no Edge invoke.
+- **Stale hint:** compares a client `analyticsDataFingerprintForPreset` (same formula as Edge) to `data_fingerprint` on the snapshot; if they differ, shows a banner — still **no** auto-refresh.
 - **Refresh insights:** single POST to Edge Function `analytics-insights` (or hosted web: `POST /api/analytics-insights`). That request recomputes **deterministic** rollups in Postgres (via user-scoped queries) and, when `include_ai: true`, makes **at most one** Gemini call for `short_narrative` + `prioritized_insights`. Result is **upserted** into `analytics_insight_snapshots`.
 - **Drill-down:** insight rows open `DocumentsHistoryScreen` with `restrictToDocumentIds` for evidence.
 - **Document detail:** **Analyze this document** → `DocumentAiReviewScreen` loads facts via `fetchDocumentById` only; **Run AI review** is a separate explicit action calling the same Edge function with `document_id` + `include_ai: true`.

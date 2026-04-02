@@ -6,6 +6,9 @@ enum DocumentSourceFilter {
   invoices,
   manual,
   ocr,
+  needsReview,
+  groupLinked,
+  lendBorrowLinked,
 }
 
 enum DocumentSortMode {
@@ -22,6 +25,9 @@ extension DocumentSourceFilterLabel on DocumentSourceFilter {
         DocumentSourceFilter.invoices => 'Invoices',
         DocumentSourceFilter.manual => 'Manual',
         DocumentSourceFilter.ocr => 'OCR',
+        DocumentSourceFilter.needsReview => 'Needs review',
+        DocumentSourceFilter.groupLinked => 'Group',
+        DocumentSourceFilter.lendBorrowLinked => 'Lend/borrow',
       };
 }
 
@@ -40,6 +46,31 @@ bool documentIsOcr(Map<String, dynamic> doc) {
     final id = ed['invoice_id'];
     if (id != null && id.toString().trim().isNotEmpty) return true;
   }
+  return false;
+}
+
+bool documentIsGroupLinked(Map<String, dynamic> doc) {
+  final ed = doc['extracted_data'];
+  if (ed is! Map) return false;
+  if (ed['intent_group_expense'] != true) return false;
+  final gid = ed['group_id']?.toString().trim() ?? '';
+  return gid.isNotEmpty;
+}
+
+bool documentIsLendBorrowLinked(Map<String, dynamic> doc) {
+  final ed = doc['extracted_data'];
+  if (ed is! Map) return false;
+  return ed['intent_lend_borrow'] == true;
+}
+
+/// OCR-linked doc that should be double-checked (low model confidence or user flag).
+bool documentNeedsReview(Map<String, dynamic> doc) {
+  if (!documentIsOcr(doc)) return false;
+  final ed = doc['extracted_data'];
+  if (ed is! Map) return false;
+  final c = (ed['extraction_confidence'] as String?)?.toLowerCase() ?? 'medium';
+  if (c == 'low') return true;
+  if (ed['user_flagged_mismatch'] == true) return true;
   return false;
 }
 
@@ -84,6 +115,15 @@ List<Map<String, dynamic>> filterAndSortDocuments(
       break;
     case DocumentSourceFilter.ocr:
       it = it.where(documentIsOcr);
+      break;
+    case DocumentSourceFilter.needsReview:
+      it = it.where(documentNeedsReview);
+      break;
+    case DocumentSourceFilter.groupLinked:
+      it = it.where(documentIsGroupLinked);
+      break;
+    case DocumentSourceFilter.lendBorrowLinked:
+      it = it.where(documentIsLendBorrowLinked);
       break;
   }
   final list = List<Map<String, dynamic>>.from(it);

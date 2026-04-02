@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../../../core/utils/analytics_fingerprint.dart';
+import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../documents/screens/documents_history_screen.dart';
 import '../models/analytics_insights_models.dart';
@@ -75,6 +77,13 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
     final async = ref.watch(analyticsInsightsProvider);
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String?;
     final result = async.valueOrNull;
+    final docs = ref.watch(documentsProvider).valueOrNull ?? [];
+    final liveFp = analyticsDataFingerprintForPreset(docs, widget.rangePreset);
+    final snapFp = result?.dataFingerprint;
+    final insightsStale = result != null &&
+        snapFp != null &&
+        snapFp.isNotEmpty &&
+        liveFp != snapFp;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -101,6 +110,30 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
             ],
           ),
         ),
+        if (insightsStale) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: BillyTheme.yellow400.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: BillyTheme.yellow400.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.update_outlined, size: 22, color: BillyTheme.gray800),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Your documents changed since this insight was generated. Tap Refresh insights for numbers and AI text that match your vault.',
+                    style: TextStyle(fontSize: 12, color: BillyTheme.gray700, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Row(
           children: [
