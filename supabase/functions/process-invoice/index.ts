@@ -383,7 +383,9 @@ async function runOcrPipelineBackground(args: {
       geminiRaw = out.raw;
       replyText = out.replyText;
     } catch (e) {
-      const msg = String(e);
+      const raw = e instanceof Error ? e.message : String(e);
+      const msg = raw.length > 0 ? raw : `Gemini call failed (${typeof e}: ${JSON.stringify(e)})`;
+      console.error("process-invoice: gemini error", msg);
       await logInsert("failed", msg, body, geminiRaw, null);
       await event("gemini_failed", { error: msg.slice(0, 300) });
       await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
@@ -463,12 +465,17 @@ async function runOcrPipelineBackground(args: {
     await supabase.from("invoices").update(updateRow).eq("id", invoiceId);
     await event("processing_completed", { items: itemRows.length, model: GEMINI_MODEL });
   } catch (e) {
-    const msg = `Unexpected: ${String(e)}`;
-    console.error("process-invoice background", e);
-    await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
-      "id",
-      invoiceId,
-    );
+    const detail = e instanceof Error ? e.message : JSON.stringify(e);
+    const msg = `Unexpected error: ${detail || String(e)}`;
+    console.error("process-invoice background", msg, e);
+    try {
+      await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
+        "id",
+        invoiceId,
+      );
+    } catch (updateErr) {
+      console.error("process-invoice: could not write failure status", updateErr);
+    }
   }
 }
 

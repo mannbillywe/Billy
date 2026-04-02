@@ -73,19 +73,20 @@ class InvoiceOcrPipeline {
         invoiceId: invoiceId,
         filePath: path,
       );
-    } on FunctionException catch (e) {
-      final msg = _formatFunctionError(e);
-      BillyLogger.warn('process-invoice failed', msg);
+    } catch (e) {
+      final msg = _humanError(e);
+      BillyLogger.warn('process-invoice invoke failed [${e.runtimeType}]', msg);
       throw Exception(msg);
     }
 
     if (res.status < 200 || res.status >= 300) {
-      throw Exception('OCR failed (${res.status})');
+      throw Exception('OCR failed (HTTP ${res.status})');
     }
 
     final data = res.data;
     if (data is! Map) {
-      throw Exception('Invalid OCR response');
+      BillyLogger.warn('process-invoice: non-map response', '${res.status} ${data.runtimeType}');
+      throw Exception('Invalid OCR response (status ${res.status})');
     }
 
     final map = Map<String, dynamic>.from(data);
@@ -103,13 +104,16 @@ class InvoiceOcrPipeline {
       if (err is Map && err['message'] != null) {
         throw Exception(err['message'].toString());
       }
-      throw Exception('OCR was not successful');
+      final errStr = err?.toString() ?? '';
+      throw Exception(
+        errStr.isNotEmpty && errStr != '{}' ? errStr : 'OCR was not successful (HTTP ${res.status})',
+      );
     }
 
     final inv = map['invoice'];
     final items = map['items'];
     if (inv is! Map) {
-      throw Exception('Missing invoice in response');
+      throw Exception('Missing invoice data in response');
     }
 
     final receipt = ExtractedReceipt.fromInvoiceOcr(
@@ -225,8 +229,12 @@ class InvoiceOcrPipeline {
       final s = row?['status'] as String?;
       if (s == 'completed') return;
       if (s == 'failed') {
-        final err = row?['processing_error']?.toString();
-        throw Exception(err != null && err.isNotEmpty ? err : 'OCR failed');
+        final raw = row?['processing_error'];
+        final err = raw?.toString() ?? '';
+        final msg = (err.isNotEmpty && err != '{}' && err != 'null')
+            ? err
+            : 'OCR processing failed. Try a clearer image or check your Gemini API key.';
+        throw Exception(msg);
       }
       await Future<void>.delayed(step);
     }
@@ -252,12 +260,21 @@ class InvoiceOcrPipeline {
   // Error formatting
   // ---------------------------------------------------------------------------
 
+  /// Turn any caught exception into a user-visible string.
+  /// Handles [FunctionException], [PostgrestException], and generic types.
+  static String _humanError(Object e) {
+    if (e is FunctionException) return _formatFunctionError(e);
+
+    final s = e.toString();
+    // Dart wraps with "Exception: " — strip that prefix for cleaner UI.
+    if (s.startsWith('Exception: ')) return s.substring(11);
+    return s.isNotEmpty ? s : 'Unknown error (${e.runtimeType})';
+  }
+
   static String _formatFunctionError(FunctionException e) {
     final d = e.details;
 
-    // Surface the exact upstream error so we can debug production issues.
     if (d is Map) {
-      // Our Vercel proxy wraps the upstream response in _upstream_body.
       final upstream = d['_upstream_body'];
       if (upstream is Map) {
         final msg = upstream['msg'] ?? upstream['message'];
@@ -268,6 +285,10 @@ class InvoiceOcrPipeline {
         if (inner['message'] != null) return inner['message'].toString();
       }
       if (d['message'] != null) return d['message'].toString();
+      final asStr = d.toString();
+      if (asStr != '{}' && asStr.isNotEmpty) {
+        return 'OCR failed (HTTP ${e.status}): $asStr';
+      }
     }
     if (d is String && d.isNotEmpty) return d;
 
