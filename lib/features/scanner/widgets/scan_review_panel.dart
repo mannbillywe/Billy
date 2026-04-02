@@ -589,6 +589,22 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
           onChanged: (v) => setState(() => _useLend = v),
         ),
         if (_useLend) ...[
+          if (connections.isNotEmpty && _linkedUserId == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Link a contact so the other person sees this under the right tab (I lent / I borrowed).',
+                style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
+              ),
+            )
+          else if (connections.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Add a friend under People & groups to link them here; otherwise only you will see this entry.',
+                style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
+              ),
+            ),
           Row(
             children: ['lent', 'borrowed'].map((t) {
               final on = _lendType == t;

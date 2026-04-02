@@ -62,7 +62,9 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
 }
 
 Rules:
-- Indian receipts: capture printed CGST and SGST separately when shown (e.g. 2.5% each); include service charge and round off when printed.
+- Indian receipts: when CGST and SGST are printed as separate amounts, fill cgst and sgst (not only gst). For inter-state with IGST, use igst.
+- If the slip shows only one combined GST total and no IGST line, put that amount in gst and leave cgst/sgst at 0 (the server will split evenly for display).
+- Include service charge and round off when printed.
 - Map bill / receipt numbers to bill_number; invoice_number can match bill_number if only one number exists.
 - Dates like DD/MM/YY → convert to YYYY-MM-DD (assume 20YY for two-digit years).
 - Line items: every product row with qty, unit price, line amount.
@@ -183,12 +185,18 @@ function normalizeFromGeminiJson(
     }
   }
 
-  const cgst = num(inv.cgst) ?? 0;
-  const sgst = num(inv.sgst) ?? 0;
+  let cgst = num(inv.cgst) ?? 0;
+  let sgst = num(inv.sgst) ?? 0;
   const igst = num(inv.igst) ?? 0;
-  const gst = num(inv.gst) ?? 0;
-  const explicit = cgst + sgst + igst;
-  const total_tax = explicit > 0 ? explicit : gst;
+  const gstCombined = num(inv.gst) ?? 0;
+  let explicit = cgst + sgst + igst;
+  // Model often puts all tax in `gst` with cgst/sgst zero — split for typical intra-state CGST+SGST slips.
+  if (explicit <= 0 && gstCombined > 0 && igst <= 0) {
+    cgst = Math.round((gstCombined / 2) * 100) / 100;
+    sgst = Math.round((gstCombined - cgst) * 100) / 100;
+    explicit = cgst + sgst;
+  }
+  const total_tax = explicit > 0 ? explicit : gstCombined;
 
   const confStr = str(parsed.extraction_confidence) ?? str(inv.extraction_confidence);
   let confidence: number | null = null;
@@ -228,8 +236,8 @@ function normalizeFromGeminiJson(
     invoice_date: parseDateIso(str(inv.invoice_date) ?? undefined),
     due_date: parseDateIso(str(inv.due_date) ?? undefined),
     subtotal,
-    cgst: cgst || null,
-    sgst: sgst || null,
+    cgst: cgst > 0 ? cgst : null,
+    sgst: sgst > 0 ? sgst : null,
     igst: igst || null,
     cess: num(inv.cess) ?? num(inv.other_taxes),
     discount: num(inv.discount),

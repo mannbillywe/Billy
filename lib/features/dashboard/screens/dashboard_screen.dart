@@ -128,7 +128,7 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 20),
-          OcrBanner(onScan: onOpenScan),
+          OcrBanner(onManualEntry: onCreateBill),
           if (recentItems.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(

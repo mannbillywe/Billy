@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/billy_theme.dart';
 
 class OcrBanner extends StatelessWidget {
-  const OcrBanner({super.key, this.onScan});
+  const OcrBanner({super.key, this.onManualEntry});
 
-  final VoidCallback? onScan;
+  /// Opens manual expense entry (FAB opens scan / camera).
+  final VoidCallback? onManualEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +28,7 @@ class OcrBanner extends StatelessWidget {
               color: BillyTheme.emerald50,
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(Icons.document_scanner_outlined, size: 24, color: BillyTheme.emerald600),
+            child: const Icon(Icons.edit_note_rounded, size: 24, color: BillyTheme.emerald600),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -35,12 +36,12 @@ class OcrBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
                 Text(
-                  'OCR Features',
+                  'Manual entry',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'OCR and serialization of bills',
+                  'Add an expense without scanning a bill',
                   style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
                 ),
               ],
@@ -48,7 +49,7 @@ class OcrBanner extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           GestureDetector(
-            onTap: onScan,
+            onTap: onManualEntry,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
@@ -56,7 +57,7 @@ class OcrBanner extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Text(
-                'Scan Bill',
+                'Enter manually',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
               ),
             ),

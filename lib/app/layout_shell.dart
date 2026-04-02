@@ -143,7 +143,7 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
       bottomNavigationBar: BillyBottomNav(
         activeIndex: _activeTab,
         onTap: (i) => setState(() => _activeTab = i),
-        onFabTap: _openAddExpense,
+        onFabTap: _openScan,
       ),
     );
   }

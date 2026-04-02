@@ -7,6 +7,12 @@ class SupabaseService {
   static SupabaseClient get _client => Supabase.instance.client;
   static String? get _uid => _client.auth.currentUser?.id;
 
+  /// Remote DB may not have applied `documents.category_source` migration yet (PGRST204).
+  static bool _isMissingCategorySourceColumnError(Object e) {
+    final s = e.toString();
+    return s.contains('PGRST204') && s.contains('category_source');
+  }
+
   // ─── Documents ───────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchDocuments() async {
     if (_uid == null) return [];
@@ -34,7 +40,7 @@ class SupabaseService {
     String? categorySource,
   }) async {
     if (_uid == null) return;
-    await _client.from('documents').insert({
+    final row = <String, dynamic>{
       'user_id': _uid,
       'vendor_name': vendorName,
       'amount': amount,
@@ -48,7 +54,17 @@ class SupabaseService {
       'status': status,
       if (categoryId != null) 'category_id': categoryId,
       if (categorySource != null) 'category_source': categorySource,
-    });
+    };
+    try {
+      await _client.from('documents').insert(row);
+    } catch (e) {
+      if (categorySource != null && _isMissingCategorySourceColumnError(e)) {
+        row.remove('category_source');
+        await _client.from('documents').insert(row);
+        return;
+      }
+      rethrow;
+    }
   }
 
   static Future<void> deleteDocument(String id) async {
@@ -105,7 +121,18 @@ class SupabaseService {
     if (writeCategorySource) {
       updates['category_source'] = categorySource;
     }
-    await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
+    try {
+      await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
+    } catch (e) {
+      if (writeCategorySource &&
+          updates.containsKey('category_source') &&
+          _isMissingCategorySourceColumnError(e)) {
+        updates.remove('category_source');
+        await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
+        return;
+      }
+      rethrow;
+    }
   }
 
   /// Match `categories.name` for default (`user_id` null) or current user rows.

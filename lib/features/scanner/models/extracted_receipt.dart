@@ -172,11 +172,17 @@ class ExtractedReceipt {
       );
     }).toList();
 
-    final cgst = (inv['cgst'] as num?)?.toDouble() ?? 0;
-    final sgst = (inv['sgst'] as num?)?.toDouble() ?? 0;
+    var cgst = (inv['cgst'] as num?)?.toDouble() ?? 0;
+    var sgst = (inv['sgst'] as num?)?.toDouble() ?? 0;
     final igst = (inv['igst'] as num?)?.toDouble() ?? 0;
     final totalTaxField = (inv['total_tax'] as num?)?.toDouble() ?? 0;
-    final explicit = cgst + sgst + igst;
+    var explicit = cgst + sgst + igst;
+    // DB may only have total_tax when OCR put everything in `gst` (pre-split invoices).
+    if (explicit <= 0 && totalTaxField > 0 && igst <= 0) {
+      cgst = double.parse((totalTaxField / 2).toStringAsFixed(2));
+      sgst = double.parse((totalTaxField - cgst).toStringAsFixed(2));
+      explicit = cgst + sgst + igst;
+    }
     final combinedTax = explicit > 0 ? explicit : totalTaxField;
 
     final conf = inv['confidence'];
