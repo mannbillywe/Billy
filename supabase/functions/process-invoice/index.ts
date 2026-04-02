@@ -10,7 +10,7 @@ declare const EdgeRuntime:
   | { waitUntil: (p: Promise<unknown>) => void }
   | undefined;
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-2.0-flash-lite";
 
 type Json = Record<string, unknown>;
 
@@ -632,8 +632,9 @@ serve(async (req) => {
   }
 
   const keySource = fromProfile.length > 0 ? "profiles.gemini_api_key" : "GEMINI_API_KEY secret";
+  const keyPrefix = geminiKey.slice(0, 8);
   console.log(
-    `process-invoice: user=${user.id} key_source=${keySource} model=${GEMINI_MODEL} (async)`,
+    `process-invoice: user=${user.id} key_source=${keySource} key_prefix=${keyPrefix}… model=${GEMINI_MODEL} (async)`,
   );
 
   await supabase.from("invoice_processing_events").insert({
