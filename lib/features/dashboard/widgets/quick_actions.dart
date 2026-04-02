@@ -6,12 +6,13 @@ class QuickActions extends StatelessWidget {
   const QuickActions({
     super.key,
     this.onCreateBill,
-    this.onLinkBank,
+    this.onOpenAllDocuments,
     this.onExportData,
   });
 
   final VoidCallback? onCreateBill;
-  final VoidCallback? onLinkBank;
+  /// Opens full document history (replaces placeholder "Link bank" affordance).
+  final VoidCallback? onOpenAllDocuments;
   final VoidCallback? onExportData;
 
   @override
@@ -26,7 +27,11 @@ class QuickActions extends StatelessWidget {
         const SizedBox(height: 12),
         _QuickLinkTile(icon: Icons.description_outlined, label: 'Create Bill', onTap: onCreateBill),
         const SizedBox(height: 10),
-        _QuickLinkTile(icon: Icons.home_outlined, label: 'Link Bank', onTap: onLinkBank),
+        _QuickLinkTile(
+          icon: Icons.receipt_long_outlined,
+          label: 'All documents',
+          onTap: onOpenAllDocuments,
+        ),
         const SizedBox(height: 10),
         _QuickLinkTile(icon: Icons.send_outlined, label: 'Export Data', onTap: onExportData),
       ],

@@ -55,28 +55,6 @@ class BillyHeader extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: BillyTheme.emerald50,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Customize',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: BillyTheme.emerald700,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Icon(Icons.chevron_right, size: 16, color: BillyTheme.emerald700),
-              ],
-            ),
-          ),
         ],
       ),
     );

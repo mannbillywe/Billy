@@ -44,7 +44,74 @@ class SupabaseService {
   }
 
   static Future<void> deleteDocument(String id) async {
-    await _client.from('documents').delete().eq('id', id);
+    final uid = _uid;
+    if (uid == null) return;
+    await _client.from('documents').delete().eq('id', id).eq('user_id', uid);
+  }
+
+  /// Single document for detail / edit flows.
+  static Future<Map<String, dynamic>?> fetchDocumentById(String id) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    final res = await _client
+        .from('documents')
+        .select()
+        .eq('id', id)
+        .eq('user_id', uid)
+        .maybeSingle();
+    return res;
+  }
+
+  static Future<void> updateDocument({
+    required String id,
+    String? vendorName,
+    double? amount,
+    double? taxAmount,
+    String? date,
+    String? type,
+    String? description,
+    String? paymentMethod,
+    String? currency,
+    Map<String, dynamic>? extractedData,
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    final updates = <String, dynamic>{
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (vendorName != null) updates['vendor_name'] = vendorName;
+    if (amount != null) updates['amount'] = amount;
+    if (taxAmount != null) updates['tax_amount'] = taxAmount;
+    if (date != null) updates['date'] = date;
+    if (type != null) updates['type'] = type;
+    if (description != null) updates['description'] = description;
+    if (paymentMethod != null) updates['payment_method'] = paymentMethod;
+    if (currency != null && currency.isNotEmpty) updates['currency'] = currency;
+    if (extractedData != null) updates['extracted_data'] = extractedData;
+    await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
+  }
+
+  /// Signed URL to open original scan in Storage (invoice OCR pipeline).
+  static Future<String?> signedUrlForInvoiceFile(String filePath, {int seconds = 3600}) async {
+    if (_uid == null) return null;
+    try {
+      return await _client.storage.from('invoice-files').createSignedUrl(filePath, seconds);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Header row for linked OCR invoice (file_path, mime_type, etc.).
+  static Future<Map<String, dynamic>?> fetchInvoiceHeaderForUser(String invoiceId) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    final res = await _client
+        .from('invoices')
+        .select('id,file_path,mime_type,status,vendor_name,review_required')
+        .eq('id', invoiceId)
+        .eq('user_id', uid)
+        .maybeSingle();
+    return res;
   }
 
   // ─── Invoices (OCR pipeline) ───────────────────────────────────

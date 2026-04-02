@@ -52,19 +52,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Analytics', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-              Row(
-                children: [
-                  _CircleButton(icon: Icons.notifications_outlined, onPressed: () {}),
-                  const SizedBox(width: 8),
-                  _CircleButton(icon: Icons.settings_outlined, onPressed: () {}),
-                ],
-              ),
-            ],
-          ),
+          const Text('Analytics', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
           const SizedBox(height: 8),
           Text(
             'Range: ${_labelForFilter(_dateFilter)}',
@@ -112,24 +100,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       default:
         return 'Last month';
     }
-  }
-}
-
-class _CircleButton extends StatelessWidget {
-  const _CircleButton({required this.icon, this.onPressed});
-  final IconData icon;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton.filledTonal(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 20, color: BillyTheme.gray600),
-      style: IconButton.styleFrom(
-        backgroundColor: Colors.white,
-        side: BorderSide(color: BillyTheme.gray100),
-      ),
-    );
   }
 }
 

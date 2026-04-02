@@ -18,13 +18,15 @@ class DashboardScreen extends ConsumerWidget {
     this.onOpenScan,
     this.onExportData,
     this.onCreateBill,
-    this.onLinkBank,
+    this.onOpenAllDocuments,
+    this.onOpenDocumentDetail,
   });
 
   final VoidCallback? onOpenScan;
   final VoidCallback? onExportData;
   final VoidCallback? onCreateBill;
-  final VoidCallback? onLinkBank;
+  final void Function(String documentId)? onOpenDocumentDetail;
+  final VoidCallback? onOpenAllDocuments;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -47,6 +49,7 @@ class DashboardScreen extends ConsumerWidget {
       final amount = (d['amount'] as num?)?.toDouble() ?? 0;
       final desc = d['description'] as String? ?? '';
       final dateStr = d['date'] as String? ?? '';
+      final docId = d['id'] as String?;
       String formattedDate = dateStr;
       try {
         final dt = DateTime.parse(dateStr);
@@ -62,6 +65,7 @@ class DashboardScreen extends ConsumerWidget {
       } catch (_) {}
 
       return RecentActivityItem(
+        documentId: docId,
         vendor: vendor,
         amount: amount,
         category: desc.isNotEmpty ? desc.split(',').first.trim() : 'Expense',
@@ -103,7 +107,7 @@ class DashboardScreen extends ConsumerWidget {
               Expanded(
                 child: QuickActions(
                   onCreateBill: onCreateBill,
-                  onLinkBank: onLinkBank,
+                  onOpenAllDocuments: onOpenAllDocuments,
                   onExportData: onExportData,
                 ),
               ),
@@ -131,11 +135,18 @@ class DashboardScreen extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Recent', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                Text('Latest 10', style: TextStyle(fontSize: 14, color: BillyTheme.gray400)),
+                TextButton(
+                  onPressed: onOpenAllDocuments,
+                  child: const Text('View all'),
+                ),
               ],
             ),
             const SizedBox(height: 12),
-            RecentActivity(items: recentItems, currencyCode: currency),
+            RecentActivity(
+              items: recentItems,
+              currencyCode: currency,
+              onItemTap: onOpenDocumentDetail,
+            ),
           ],
         ],
       ),

@@ -40,6 +40,33 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     await SupabaseService.deleteDocument(id);
     await refresh();
   }
+
+  Future<void> updateDocument({
+    required String id,
+    String? vendorName,
+    double? amount,
+    double? taxAmount,
+    String? date,
+    String? type,
+    String? description,
+    String? paymentMethod,
+    String? currency,
+    Map<String, dynamic>? extractedData,
+  }) async {
+    await SupabaseService.updateDocument(
+      id: id,
+      vendorName: vendorName,
+      amount: amount,
+      taxAmount: taxAmount,
+      date: date,
+      type: type,
+      description: description,
+      paymentMethod: paymentMethod,
+      currency: currency,
+      extractedData: extractedData,
+    );
+    await refresh();
+  }
 }
 
 final documentsProvider =

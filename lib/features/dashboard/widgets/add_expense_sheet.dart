@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/profile_provider.dart';
 
 class AddExpenseSheet extends ConsumerStatefulWidget {
   const AddExpenseSheet({super.key});
@@ -57,6 +58,10 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         type: _type,
         description: _category,
         paymentMethod: null,
+        extractedData: {
+          'category': _category,
+          'source': 'manual',
+        },
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -71,6 +76,8 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final currencyCode =
+        ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'INR';
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
       child: SingleChildScrollView(
@@ -123,7 +130,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
             const SizedBox(height: 16),
             _buildField(_vendorCtrl, 'Vendor / Company name'),
             const SizedBox(height: 12),
-            _buildField(_amountCtrl, 'Amount (\$)', keyboard: TextInputType.number),
+            _buildField(_amountCtrl, 'Amount ($currencyCode)', keyboard: TextInputType.number),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

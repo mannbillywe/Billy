@@ -182,7 +182,12 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             }
         ]
         ..['allocation_total'] = alloc
-        ..['invoice_id'] = widget.invoiceId;
+        ..['invoice_id'] = widget.invoiceId
+        ..['intent_group_expense'] = _useGroup && _groupId != null
+        ..['group_id'] = _groupId
+        ..['intent_lend_borrow'] = _useLend
+        ..['lend_type'] = _useLend ? _lendType : null
+        ..['lend_counterparty'] = _useLend ? _counterpartyCtrl.text.trim() : null;
 
       if (widget.invoiceId != null) {
         final iid = widget.invoiceId!;

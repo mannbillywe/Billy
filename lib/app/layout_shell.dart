@@ -5,6 +5,8 @@ import '../core/theme/billy_theme.dart';
 import '../features/analytics/screens/analytics_screen.dart';
 import '../features/dashboard/screens/dashboard_screen.dart';
 import '../features/dashboard/widgets/add_expense_sheet.dart';
+import '../features/documents/screens/document_detail_screen.dart';
+import '../features/documents/screens/documents_history_screen.dart';
 import '../features/export/models/export_document.dart';
 import '../features/export/screens/export_screen.dart';
 import '../features/lend_borrow/screens/split_screen.dart';
@@ -69,6 +71,20 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
     );
   }
 
+  void _openDocumentHistory() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const DocumentsHistoryScreen()),
+    );
+  }
+
+  void _openDocumentDetail(String documentId) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DocumentDetailScreen(documentId: documentId),
+      ),
+    );
+  }
+
   void _openExport() {
     final docs = ref.read(documentsProvider).valueOrNull ?? [];
     final exportDocs = docs.map((d) => ExportDocument(
@@ -90,11 +106,8 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
           onOpenScan: _openScan,
           onExportData: _openExport,
           onCreateBill: _openAddExpense,
-          onLinkBank: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Bank linking is not available yet.')),
-            );
-          },
+          onOpenAllDocuments: _openDocumentHistory,
+          onOpenDocumentDetail: _openDocumentDetail,
         );
       case 1:
         return const AnalyticsScreen();
@@ -107,7 +120,8 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
           onOpenScan: _openScan,
           onExportData: _openExport,
           onCreateBill: _openAddExpense,
-          onLinkBank: () {},
+          onOpenAllDocuments: _openDocumentHistory,
+          onOpenDocumentDetail: _openDocumentDetail,
         );
     }
   }
