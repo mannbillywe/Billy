@@ -97,6 +97,25 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     return s;
   }
 
+  Map<String, dynamic> _extractedPayload(ExtractedReceipt draft, double alloc) {
+    return draft.toJson()
+      ..['line_selection'] = [
+        for (var i = 0; i < draft.lineItems.length; i++)
+          {
+            'index': i,
+            'included': i < _lineOn.length ? _lineOn[i] : false,
+            'assigned_user_id': i < _lineAssignee.length ? _lineAssignee[i] : null,
+          }
+      ]
+      ..['allocation_total'] = alloc
+      ..['invoice_id'] = widget.invoiceId
+      ..['intent_group_expense'] = _useGroup && _groupId != null
+      ..['group_id'] = _groupId
+      ..['intent_lend_borrow'] = _useLend
+      ..['lend_type'] = _useLend ? _lendType : null
+      ..['lend_counterparty'] = _useLend ? _counterpartyCtrl.text.trim() : null;
+  }
+
   List<Map<String, dynamic>> _membersForGroup(String? gid, List<Map<String, dynamic>> groups) {
     if (gid == null) return [];
     Map<String, dynamic>? g;
@@ -176,22 +195,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
       final categoryId =
           descParts.isNotEmpty ? await SupabaseService.resolveCategoryIdByName(descParts.first) : null;
 
-      final extractedPayload = draft.toJson()
-        ..['line_selection'] = [
-          for (var i = 0; i < draft.lineItems.length; i++)
-            {
-              'index': i,
-              'included': i < _lineOn.length ? _lineOn[i] : false,
-              'assigned_user_id': i < _lineAssignee.length ? _lineAssignee[i] : null,
-            }
-        ]
-        ..['allocation_total'] = alloc
-        ..['invoice_id'] = widget.invoiceId
-        ..['intent_group_expense'] = _useGroup && _groupId != null
-        ..['group_id'] = _groupId
-        ..['intent_lend_borrow'] = _useLend
-        ..['lend_type'] = _useLend ? _lendType : null
-        ..['lend_counterparty'] = _useLend ? _counterpartyCtrl.text.trim() : null;
+      final extractedPayload = _extractedPayload(draft, alloc);
 
       if (widget.invoiceId != null) {
         final iid = widget.invoiceId!;
@@ -301,6 +305,69 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Save failed: $e'), backgroundColor: BillyTheme.red500),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Saves a `documents` row with `status: draft` only — no invoice sync, group expense, or lend/borrow.
+  Future<void> _saveAsDraft() async {
+    if (_saving) return;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    final draft = _buildReceipt();
+    final alloc = _allocationTotal(draft);
+    final amount = alloc > 0 ? alloc : draft.total;
+
+    setState(() => _saving = true);
+    try {
+      final taxStored = draft.cgst + draft.sgst + draft.igst > 0 ? draft.cgst + draft.sgst + draft.igst : draft.tax;
+      final descParts = <String>{};
+      if (draft.category != null) descParts.add(draft.category!);
+      for (var i = 0; i < draft.lineItems.length; i++) {
+        if (i < _lineOn.length && _lineOn[i] && draft.lineItems[i].category != null) {
+          descParts.add(draft.lineItems[i].category!);
+        }
+      }
+
+      final categoryId =
+          descParts.isNotEmpty ? await SupabaseService.resolveCategoryIdByName(descParts.first) : null;
+
+      final extractedPayload = _extractedPayload(draft, alloc)..['scan_draft'] = true;
+
+      await ref.read(documentsProvider.notifier).addDocument(
+            vendorName: draft.vendorName.isNotEmpty ? draft.vendorName : 'Draft',
+            amount: amount >= 0 ? amount : 0,
+            taxAmount: taxStored,
+            date: draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10),
+            type: (draft.invoiceNumber != null && draft.invoiceNumber!.isNotEmpty) ? 'invoice' : 'receipt',
+            description: descParts.isEmpty ? null : descParts.join(', '),
+            paymentMethod: draft.paymentMethod,
+            currency: draft.currency,
+            extractedData: extractedPayload,
+            categoryId: categoryId,
+            categorySource: DocumentCategorySource.ai,
+            status: 'draft',
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Saved as draft', style: TextStyle(fontWeight: FontWeight.w700)),
+            backgroundColor: BillyTheme.emerald600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+        );
+      }
+      widget.onDone();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Draft save failed: $e'), backgroundColor: BillyTheme.red500),
         );
       }
     } finally {
@@ -556,7 +623,15 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             ),
           ],
         ],
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: _saving ? null : _saveAsDraft,
+            child: const Text('Save as draft'),
+          ),
+        ),
+        const SizedBox(height: 16),
         Row(
           children: [
             Expanded(

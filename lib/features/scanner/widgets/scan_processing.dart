@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/billy_theme.dart';
 
-/// Processing state - spinner, "Extracting", "Billy AI Model v2.1"
+/// Processing state while Gemini reads the scan.
 class ScanProcessing extends StatelessWidget {
   const ScanProcessing({super.key});
 
@@ -46,7 +46,7 @@ class ScanProcessing extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Billy AI Model v2.1',
+              'Google Gemini · extracting fields',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
