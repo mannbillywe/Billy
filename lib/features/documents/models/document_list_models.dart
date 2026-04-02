@@ -7,6 +7,7 @@ enum DocumentSourceFilter {
   manual,
   ocr,
   needsReview,
+  drafts,
   groupLinked,
   lendBorrowLinked,
 }
@@ -26,6 +27,7 @@ extension DocumentSourceFilterLabel on DocumentSourceFilter {
         DocumentSourceFilter.manual => 'Manual',
         DocumentSourceFilter.ocr => 'OCR',
         DocumentSourceFilter.needsReview => 'Needs review',
+        DocumentSourceFilter.drafts => 'Drafts',
         DocumentSourceFilter.groupLinked => 'Group',
         DocumentSourceFilter.lendBorrowLinked => 'Lend/borrow',
       };
@@ -118,6 +120,9 @@ List<Map<String, dynamic>> filterAndSortDocuments(
       break;
     case DocumentSourceFilter.needsReview:
       it = it.where(documentNeedsReview);
+      break;
+    case DocumentSourceFilter.drafts:
+      it = it.where((d) => (d['status'] as String? ?? '') == 'draft');
       break;
     case DocumentSourceFilter.groupLinked:
       it = it.where(documentIsGroupLinked);

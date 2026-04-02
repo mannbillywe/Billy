@@ -5,6 +5,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../services/supabase_service.dart';
 import '../../export/models/export_document.dart';
+import '../../export/screens/export_history_screen.dart';
 import '../../export/screens/export_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 import '../../../providers/documents_provider.dart';
@@ -92,6 +93,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               final exportDocs = documentsForExport(docs);
               Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => ExportScreen(documents: exportDocs)),
+              );
+            },
+          ),
+          _tile(
+            icon: Icons.history,
+            title: 'Export history',
+            subtitle: 'Past PDF and CSV exports',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const ExportHistoryScreen()),
               );
             },
           ),

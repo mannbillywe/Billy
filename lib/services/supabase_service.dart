@@ -207,6 +207,18 @@ class SupabaseService {
     });
   }
 
+  static Future<List<Map<String, dynamic>>> fetchExportHistory({int limit = 100}) async {
+    final uid = _uid;
+    if (uid == null) return [];
+    final res = await _client
+        .from('export_history')
+        .select()
+        .eq('user_id', uid)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   /// Last saved analytics snapshot for [rangePreset] (`1W` | `1M` | `3M`). Read-only cache row.
   static Future<Map<String, dynamic>?> fetchAnalyticsInsightSnapshot(String rangePreset) async {
     final uid = _uid;
