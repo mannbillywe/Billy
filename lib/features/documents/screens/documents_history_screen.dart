@@ -11,7 +11,10 @@ import 'document_detail_screen.dart';
 
 /// Full list of saved documents with search, filters, and sort.
 class DocumentsHistoryScreen extends ConsumerStatefulWidget {
-  const DocumentsHistoryScreen({super.key});
+  const DocumentsHistoryScreen({super.key, this.restrictToDocumentIds});
+
+  /// When non-empty, only these rows are shown (e.g. insight drill-down).
+  final Set<String>? restrictToDocumentIds;
 
   @override
   ConsumerState<DocumentsHistoryScreen> createState() => _DocumentsHistoryScreenState();
@@ -37,19 +40,27 @@ class _DocumentsHistoryScreenState extends ConsumerState<DocumentsHistoryScreen>
     return Scaffold(
       backgroundColor: BillyTheme.scaffoldBg,
       appBar: AppBar(
-        title: const Text('All documents'),
+        title: Text(
+          widget.restrictToDocumentIds != null && widget.restrictToDocumentIds!.isNotEmpty
+              ? 'Matching documents'
+              : 'All documents',
+        ),
         backgroundColor: BillyTheme.scaffoldBg,
         foregroundColor: BillyTheme.gray800,
         elevation: 0,
       ),
       body: docsAsync.when(
         data: (docs) {
-          final filtered = filterAndSortDocuments(
+          var filtered = filterAndSortDocuments(
             docs,
             searchQuery: _searchCtrl.text,
             filter: _filter,
             sort: _sort,
           );
+          final restrict = widget.restrictToDocumentIds;
+          if (restrict != null && restrict.isNotEmpty) {
+            filtered = filtered.where((d) => restrict.contains(d['id'] as String?)).toList();
+          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

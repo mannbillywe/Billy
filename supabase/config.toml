@@ -3,3 +3,6 @@
 
 [functions.process-invoice]
 verify_jwt = false
+
+[functions.analytics-insights]
+verify_jwt = false

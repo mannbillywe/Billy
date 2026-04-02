@@ -197,6 +197,23 @@ class SupabaseService {
     });
   }
 
+  /// Last saved analytics snapshot for [rangePreset] (`1W` | `1M` | `3M`). Read-only cache row.
+  static Future<Map<String, dynamic>?> fetchAnalyticsInsightSnapshot(String rangePreset) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    try {
+      final res = await _client
+          .from('analytics_insight_snapshots')
+          .select()
+          .eq('user_id', uid)
+          .eq('range_preset', rangePreset)
+          .maybeSingle();
+      return res;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Signed URL to open original scan in Storage (invoice OCR pipeline).
   static Future<String?> signedUrlForInvoiceFile(String filePath, {int seconds = 3600}) async {
     if (_uid == null) return null;

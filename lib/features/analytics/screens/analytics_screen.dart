@@ -7,6 +7,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../widgets/ai_insights_panel.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -17,6 +18,7 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   String _dateFilter = '1M';
+  int _segment = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -60,31 +62,60 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           ),
           const SizedBox(height: 12),
           _DateFilterBar(selected: _dateFilter, onChanged: (v) => setState(() => _dateFilter = v)),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _ExpenseBreakdown(
-                  topCategory: topCategory?.key ?? '—',
-                  topPct: topPct,
-                  totalExpenses: totalExpenses,
-                  currencyCode: currency,
-                ),
+          const SizedBox(height: 12),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment<int>(
+                value: 0,
+                label: Text('Overview'),
+                icon: Icon(Icons.insights_outlined, size: 18),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _TopCategoriesBarChart(
-                  data: barData,
-                  totalSpent: totalExpenses,
-                  avgSpend: avgSpend,
-                  currencyCode: currency,
-                ),
+              ButtonSegment<int>(
+                value: 1,
+                label: Text('AI Insights'),
+                icon: Icon(Icons.auto_awesome_outlined, size: 18),
               ),
             ],
+            selected: {_segment},
+            onSelectionChanged: (Set<int> next) {
+              setState(() => _segment = next.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) return BillyTheme.emerald700;
+                return BillyTheme.gray600;
+              }),
+            ),
           ),
           const SizedBox(height: 20),
-          _TopCategoriesList(categories: sortedCats, totalExpenses: totalExpenses, currencyCode: currency),
+          if (_segment == 0) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _ExpenseBreakdown(
+                    topCategory: topCategory?.key ?? '—',
+                    topPct: topPct,
+                    totalExpenses: totalExpenses,
+                    currencyCode: currency,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _TopCategoriesBarChart(
+                    data: barData,
+                    totalSpent: totalExpenses,
+                    avgSpend: avgSpend,
+                    currencyCode: currency,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _TopCategoriesList(categories: sortedCats, totalExpenses: totalExpenses, currencyCode: currency),
+          ] else
+            AiInsightsPanel(rangePreset: _dateFilter),
         ],
       ),
     );

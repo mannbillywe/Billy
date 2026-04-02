@@ -265,14 +265,34 @@ State machine: `idle` → `processing` → `success` | `error`
 
 **Filters:** segmented control **1W** / **1M** / **3M** (`DocumentDateRange.forFilter`)
 
+**Top-level segments (Material `SegmentedButton`):**
+
+| Segment | Content |
+|--------|---------|
+| **Overview** | Same as before: charts and lists from in-memory `documents` (no server AI). |
+| **AI Insights** | Cached snapshot from Postgres + **manual** “Refresh insights” only (no Gemini on tab switch). |
+
+### 8.1 Overview (unchanged)
+
 **Derived from in-memory `documents`** (filtered by date range):
 
-- Header **Analytics** (notification/settings icons removed as dead ends)
 - **Expense breakdown** card: donut (`fl_chart`) — top category share vs “rest”; total spend in center
-- **Daily spend (7 days)** bar chart — uses `DocumentDateRange.lastSevenDaySpending` anchored to range **end** date
+- **Daily spend (7 days)** bar chart — `DocumentDateRange.lastSevenDaySpending` anchored to range **end** date
 - **Top categories** list — top 4 categories with progress bars and emoji icons
 
 **Category source:** first segment of `documents.description` split by `,`, same as dashboard insights.
+
+### 8.2 AI Insights (document-backed, cost-controlled)
+
+- **UI:** `lib/features/analytics/widgets/ai_insights_panel.dart`, state: `lib/features/analytics/providers/analytics_insights_provider.dart`
+- **On entering AI Insights:** loads last row from `analytics_insight_snapshots` for the current preset (`SupabaseService.fetchAnalyticsInsightSnapshot`) — **read only**, no Edge invoke.
+- **Refresh insights:** single POST to Edge Function `analytics-insights` (or hosted web: `POST /api/analytics-insights`). That request recomputes **deterministic** rollups in Postgres (via user-scoped queries) and, when `include_ai: true`, makes **at most one** Gemini call for `short_narrative` + `prioritized_insights`. Result is **upserted** into `analytics_insight_snapshots`.
+- **Drill-down:** insight rows open `DocumentsHistoryScreen` with `restrictToDocumentIds` for evidence.
+- **Document detail:** **Analyze this document** → `DocumentAiReviewScreen` loads facts via `fetchDocumentById` only; **Run AI review** is a separate explicit action calling the same Edge function with `document_id` + `include_ai: true`.
+
+**Backend:** `supabase/functions/analytics-insights/index.ts`, migration `20260404100000_analytics_insight_snapshots.sql`, Vercel proxy `web/api/analytics-insights.js`.
+
+**Gemini key:** same resolution as `process-invoice` — `profiles.gemini_api_key` then `GEMINI_API_KEY` secret.
 
 ---
 

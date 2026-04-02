@@ -9,6 +9,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../services/supabase_service.dart';
+import '../../analytics/screens/document_ai_review_screen.dart';
 import '../../invoices/services/invoice_ocr_pipeline.dart';
 import '../models/document_list_models.dart';
 import '../utils/document_json.dart';
@@ -408,6 +409,19 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
               );
             }),
           ],
+
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DocumentAiReviewScreen(documentId: widget.documentId),
+                ),
+              );
+            },
+            icon: const Icon(Icons.psychology_outlined),
+            label: const Text('Analyze this document'),
+          ),
 
           if (intentGroup || intentLend) ...[
             const SizedBox(height: 20),
