@@ -229,6 +229,7 @@ class _DocumentEditScreenState extends ConsumerState<DocumentEditScreen> {
       final descOut = _category;
       final taxOut = cgst + sgst + igst > 0 ? cgst + sgst + igst : (taxCombined > 0 ? taxCombined : 0.0);
       final cur = ed['currency']?.toString() ?? 'INR';
+      final catId = await SupabaseService.resolveCategoryIdByName(_category);
       await ref.read(documentsProvider.notifier).updateDocument(
             id: widget.documentId,
             vendorName: _vendorCtrl.text.trim(),
@@ -239,6 +240,7 @@ class _DocumentEditScreenState extends ConsumerState<DocumentEditScreen> {
             description: descOut,
             currency: cur,
             extractedData: ed,
+            categoryId: catId,
           );
 
       if (mounted) {

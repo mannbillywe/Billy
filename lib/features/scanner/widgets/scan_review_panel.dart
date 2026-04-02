@@ -172,6 +172,9 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         if (_lineOn[i] && draft.lineItems[i].category != null) descParts.add(draft.lineItems[i].category!);
       }
 
+      final categoryId =
+          descParts.isNotEmpty ? await SupabaseService.resolveCategoryIdByName(descParts.first) : null;
+
       final extractedPayload = draft.toJson()
         ..['line_selection'] = [
           for (var i = 0; i < draft.lineItems.length; i++)
@@ -240,6 +243,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             paymentMethod: draft.paymentMethod,
             currency: draft.currency,
             extractedData: extractedPayload,
+            categoryId: categoryId,
           );
 
       if (_useGroup && _groupId != null) {

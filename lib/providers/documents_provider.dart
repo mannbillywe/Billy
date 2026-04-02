@@ -21,6 +21,8 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     String? paymentMethod,
     String? currency,
     Map<String, dynamic>? extractedData,
+    String status = 'saved',
+    String? categoryId,
   }) async {
     await SupabaseService.insertDocument(
       vendorName: vendorName,
@@ -32,6 +34,8 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       paymentMethod: paymentMethod,
       currency: currency,
       extractedData: extractedData,
+      status: status,
+      categoryId: categoryId,
     );
     await refresh();
   }
@@ -52,6 +56,8 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     String? paymentMethod,
     String? currency,
     Map<String, dynamic>? extractedData,
+    String? status,
+    String? categoryId,
   }) async {
     await SupabaseService.updateDocument(
       id: id,
@@ -64,7 +70,14 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       paymentMethod: paymentMethod,
       currency: currency,
       extractedData: extractedData,
+      status: status,
+      categoryId: categoryId,
     );
+    await refresh();
+  }
+
+  Future<void> syncDocumentFromLinkedInvoice(String documentId) async {
+    await SupabaseService.syncDocumentFromLinkedInvoice(documentId);
     await refresh();
   }
 }

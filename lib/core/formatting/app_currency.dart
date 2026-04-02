@@ -14,4 +14,13 @@ class AppCurrency {
   }
 
   static String format(double amount, String? iso4217) => formatter(iso4217).format(amount);
+
+  /// Short label for profile-style stats (e.g. `₹1.2k` when over 1000).
+  static String formatCompact(double amount, String? iso4217) {
+    final f = formatter(iso4217);
+    if (amount >= 1000) {
+      return '${f.currencySymbol}${(amount / 1000).toStringAsFixed(1)}k';
+    }
+    return f.format(amount);
+  }
 }

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../export/models/export_document.dart';
 import '../../export/screens/export_screen.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/profile_provider.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -22,20 +24,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final user = authAsync.valueOrNull;
     final docsAsync = ref.watch(documentsProvider);
     final docs = docsAsync.valueOrNull ?? [];
+    final currency =
+        ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'INR';
 
     final displayName = user?.userMetadata?['full_name'] as String? ?? user?.email?.split('@').first ?? 'User';
     final email = user?.email ?? '';
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
 
-    final exportDocs = docs.map((d) => ExportDocument(
-      vendorName: d['vendor_name'] as String? ?? '',
-      amount: (d['amount'] as num?)?.toDouble() ?? 0,
-      date: DateTime.tryParse(d['date'] as String? ?? '') ?? DateTime.now(),
-      category: (d['description'] as String?)?.split(',').first.trim() ?? 'Other',
-      type: d['type'] as String? ?? 'receipt',
-    )).toList();
+    final exportDocs = documentsForExport(docs);
 
     final totalDocs = docs.length;
+    final totalSpend = docs
+        .where((d) => (d['status'] as String?) != 'draft')
+        .fold<double>(0, (s, d) => s + ((d['amount'] as num?)?.toDouble() ?? 0));
 
     return Scaffold(
       backgroundColor: BillyTheme.scaffoldBg,
@@ -86,7 +87,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _StatBox(
-                  value: '\$${docs.fold(0.0, (sum, d) => sum + ((d['amount'] as num?)?.toDouble() ?? 0)) > 1000 ? '${(docs.fold(0.0, (sum, d) => sum + ((d['amount'] as num?)?.toDouble() ?? 0)) / 1000).toStringAsFixed(1)}k' : docs.fold(0.0, (sum, d) => sum + ((d['amount'] as num?)?.toDouble() ?? 0)).toStringAsFixed(0)}',
+                  value: AppCurrency.formatCompact(totalSpend, currency),
                   label: 'TOTAL SPEND',
                 ),
               ),
@@ -95,11 +96,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 24),
           const Text('Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
           const SizedBox(height: 12),
-          _SettingsTile(label: 'Notifications', onTap: () {}),
+          _SettingsTile(
+            label: 'Notifications',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Notifications — coming soon')),
+              );
+            },
+          ),
           _SettingsTile(label: 'Export Data', onTap: () {
             Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ExportScreen(documents: exportDocs)));
           }),
-          _SettingsTile(label: 'Privacy Policy', onTap: () {}),
+          _SettingsTile(
+            label: 'Privacy Policy',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Privacy policy — coming soon')),
+              );
+            },
+          ),
           const SizedBox(height: 24),
           GestureDetector(
             onTap: () => Supabase.instance.client.auth.signOut(),

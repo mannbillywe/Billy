@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../services/supabase_service.dart';
 
 class AddExpenseSheet extends ConsumerStatefulWidget {
   const AddExpenseSheet({super.key});
@@ -50,6 +51,9 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
 
     setState(() => _saving = true);
     try {
+      final currencyCode =
+          ref.read(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'INR';
+      final catId = await SupabaseService.resolveCategoryIdByName(_category);
       await ref.read(documentsProvider.notifier).addDocument(
         vendorName: vendor,
         amount: amount,
@@ -58,10 +62,12 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         type: _type,
         description: _category,
         paymentMethod: null,
+        currency: currencyCode,
         extractedData: {
           'category': _category,
           'source': 'manual',
         },
+        categoryId: catId,
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {

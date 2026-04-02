@@ -1,12 +1,14 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 
 class TrendChart extends StatelessWidget {
-  const TrendChart({super.key, required this.data});
+  const TrendChart({super.key, required this.data, this.currencyCode});
 
   final List<(String, double)> data;
+  final String? currencyCode;
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +76,7 @@ class TrendChart extends StatelessWidget {
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((s) {
                   return LineTooltipItem(
-                    '\$${s.y.toInt()}',
+                    AppCurrency.format(s.y.toDouble(), currencyCode),
                     const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
                   );
                 }).toList();

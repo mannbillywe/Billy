@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -72,6 +71,7 @@ class InvoiceOcrPipeline {
         client,
         invoiceId: invoiceId,
         filePath: path,
+        forceReprocess: false,
       );
     } catch (e) {
       final msg = _humanError(e);
@@ -127,6 +127,75 @@ class InvoiceOcrPipeline {
     return (invoiceId: invoiceId, receipt: receipt);
   }
 
+  /// Re-run Gemini OCR on an existing Storage file (Edge Function must receive `force_reprocess: true`).
+  static Future<void> reprocessExistingInvoice({
+    required String invoiceId,
+    required String filePath,
+  }) async {
+    final client = Supabase.instance.client;
+    if (client.auth.currentUser == null) throw StateError('Not signed in');
+
+    FunctionResponse res;
+    try {
+      res = await _invokeProcessInvoice(
+        client,
+        invoiceId: invoiceId,
+        filePath: filePath,
+        forceReprocess: true,
+      );
+    } catch (e) {
+      final msg = _humanError(e);
+      BillyLogger.warn('process-invoice reprocess failed [${e.runtimeType}]', msg);
+      throw Exception(msg);
+    }
+
+    if (res.status < 200 || res.status >= 300) {
+      throw Exception('OCR failed (HTTP ${res.status})');
+    }
+
+    final data = res.data;
+    if (data is! Map) {
+      throw Exception('Invalid OCR response (status ${res.status})');
+    }
+
+    final map = Map<String, dynamic>.from(data);
+    if (res.status == 202 || map['pending'] == true) {
+      BillyLogger.info('invoice-ocr: reprocess accepted (async), polling $invoiceId');
+      await _waitForInvoiceOcr(client, invoiceId);
+      BillyLogger.info('invoice-ocr: reprocess completed $invoiceId');
+      return;
+    }
+
+    if (map['success'] != true) {
+      final err = map['error'];
+      if (err is Map && err['message'] != null) {
+        throw Exception(err['message'].toString());
+      }
+      throw Exception('OCR was not successful');
+    }
+  }
+
+  /// Overwrite the file at [filePath] then re-run OCR (same invoice id).
+  static Future<void> replaceInvoiceFileAndReprocess({
+    required String invoiceId,
+    required String filePath,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    if (bytes.isEmpty) throw StateError('Empty file');
+    if (bytes.length > 16 * 1024 * 1024) {
+      throw StateError('File too large (max 16 MB)');
+    }
+    final client = Supabase.instance.client;
+    await client.storage.from(_bucket).uploadBinary(
+          filePath,
+          bytes,
+          fileOptions: FileOptions(contentType: mimeType, upsert: true),
+        );
+    BillyLogger.info('invoice-ocr: replaced file at $filePath → reprocess');
+    await reprocessExistingInvoice(invoiceId: invoiceId, filePath: filePath);
+  }
+
   // ---------------------------------------------------------------------------
   // Invoke strategy
   // ---------------------------------------------------------------------------
@@ -146,13 +215,23 @@ class InvoiceOcrPipeline {
     SupabaseClient client, {
     required String invoiceId,
     required String filePath,
+    bool forceReprocess = false,
   }) async {
     if (_isHostedWeb) {
-      return _invokeViaVercelApi(client, invoiceId: invoiceId, filePath: filePath);
+      return _invokeViaVercelApi(
+        client,
+        invoiceId: invoiceId,
+        filePath: filePath,
+        forceReprocess: forceReprocess,
+      );
     }
     return client.functions.invoke(
       'process-invoice',
-      body: {'invoice_id': invoiceId, 'file_path': filePath},
+      body: {
+        'invoice_id': invoiceId,
+        'file_path': filePath,
+        if (forceReprocess) 'force_reprocess': true,
+      },
     );
   }
 
@@ -163,6 +242,7 @@ class InvoiceOcrPipeline {
     SupabaseClient client, {
     required String invoiceId,
     required String filePath,
+    bool forceReprocess = false,
   }) async {
     final session = client.auth.currentSession;
     if (session == null) {
@@ -184,6 +264,7 @@ class InvoiceOcrPipeline {
         body: jsonEncode({
           'invoice_id': invoiceId,
           'file_path': filePath,
+          if (forceReprocess) 'force_reprocess': true,
         }),
       );
 

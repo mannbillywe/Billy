@@ -89,13 +89,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             subtitle: 'PDF / CSV from your documents',
             onTap: () {
               final docs = ref.read(documentsProvider).valueOrNull ?? [];
-              final exportDocs = docs.map((d) => ExportDocument(
-                    vendorName: d['vendor_name'] as String? ?? '',
-                    amount: (d['amount'] as num?)?.toDouble() ?? 0,
-                    date: DateTime.tryParse(d['date'] as String? ?? '') ?? DateTime.now(),
-                    category: (d['description'] as String?)?.split(',').first.trim() ?? 'Other',
-                    type: d['type'] as String? ?? 'receipt',
-                  )).toList();
+              final exportDocs = documentsForExport(docs);
               Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => ExportScreen(documents: exportDocs)),
               );

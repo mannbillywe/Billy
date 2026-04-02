@@ -26,6 +26,7 @@ class DocumentDateRange {
     DocumentDateRange range,
   ) {
     return docs.where((d) {
+      if ((d['status'] as String?) == 'draft') return false;
       final raw = d['date'];
       if (raw == null) return false;
       final dt = DateTime.tryParse(raw.toString());
@@ -44,6 +45,7 @@ class DocumentDateRange {
       final d = endDay.subtract(Duration(days: i));
       var sum = 0.0;
       for (final doc in docs) {
+        if ((doc['status'] as String?) == 'draft') continue;
         final dt = DateTime.tryParse(doc['date'].toString());
         if (dt == null) continue;
         if (DateTime(dt.year, dt.month, dt.day) == d) {

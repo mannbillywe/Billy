@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +9,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../services/supabase_service.dart';
+import '../../invoices/services/invoice_ocr_pipeline.dart';
 import '../models/document_list_models.dart';
 import '../utils/document_json.dart';
 import 'document_edit_screen.dart';
@@ -28,6 +30,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   Map<String, dynamic>? _doc;
   Map<String, dynamic>? _invoiceHeader;
   String? _signedUrl;
+  bool _busyOcr = false;
 
   @override
   void initState() {
@@ -115,6 +118,77 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open file')),
       );
+    }
+  }
+
+  String _mimeForFileName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'application/octet-stream';
+  }
+
+  Future<void> _rerunOcr() async {
+    final header = _invoiceHeader;
+    final path = header?['file_path'] as String?;
+    final id = header?['id']?.toString();
+    if (id == null || id.isEmpty || path == null || path.isEmpty) return;
+
+    setState(() => _busyOcr = true);
+    try {
+      await InvoiceOcrPipeline.reprocessExistingInvoice(invoiceId: id, filePath: path);
+      await ref.read(documentsProvider.notifier).syncDocumentFromLinkedInvoice(widget.documentId);
+      if (mounted) await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busyOcr = false);
+    }
+  }
+
+  Future<void> _replaceScan() async {
+    final header = _invoiceHeader;
+    final path = header?['file_path'] as String?;
+    final id = header?['id']?.toString();
+    if (id == null || id.isEmpty || path == null || path.isEmpty) return;
+
+    final pick = await FilePicker.platform.pickFiles(
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
+    );
+    if (pick == null || pick.files.isEmpty) return;
+    final f = pick.files.single;
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read that file. Try another image or PDF.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _busyOcr = true);
+    try {
+      await InvoiceOcrPipeline.replaceInvoiceFileAndReprocess(
+        invoiceId: id,
+        filePath: path,
+        bytes: bytes,
+        mimeType: _mimeForFileName(f.name),
+      );
+      await ref.read(documentsProvider.notifier).syncDocumentFromLinkedInvoice(widget.documentId);
+      if (mounted) await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Replace failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busyOcr = false);
     }
   }
 
@@ -224,6 +298,14 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     final intentLend = ed?['intent_lend_borrow'] == true;
     final lendType = ed?['lend_type']?.toString();
     final lendParty = ed?['lend_counterparty']?.toString();
+
+    final repairPath = _invoiceHeader?['file_path'] as String?;
+    final repairId = _invoiceHeader?['id']?.toString();
+    final canOcrRepair = ocr &&
+        repairPath != null &&
+        repairPath.isNotEmpty &&
+        repairId != null &&
+        repairId.isNotEmpty;
 
     return RefreshIndicator(
       color: BillyTheme.emerald600,
@@ -357,9 +439,40 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
           if (_signedUrl != null) ...[
             const SizedBox(height: 24),
             OutlinedButton.icon(
-              onPressed: _openOriginal,
+              onPressed: _busyOcr ? null : _openOriginal,
               icon: const Icon(Icons.open_in_new),
               label: const Text('Open original file'),
+            ),
+          ],
+
+          if (canOcrRepair) ...[
+            const SizedBox(height: 20),
+            const Text(
+              'Trust & recovery',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Re-run OCR on the stored file, or upload a clearer scan to replace it. Line selections and split intents are preserved when possible.',
+              style: TextStyle(fontSize: 13, color: BillyTheme.gray500, height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: _busyOcr ? null : _rerunOcr,
+              icon: _busyOcr
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: BillyTheme.emerald600),
+                    )
+                  : const Icon(Icons.auto_fix_high_outlined),
+              label: Text(_busyOcr ? 'Working…' : 'Re-run OCR'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _busyOcr ? null : _replaceScan,
+              icon: const Icon(Icons.upload_file_outlined),
+              label: const Text('Replace scan file'),
             ),
           ],
         ],

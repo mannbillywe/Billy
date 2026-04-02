@@ -2,17 +2,19 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/billy_theme.dart';
+import '../../../services/supabase_service.dart';
 import '../models/export_document.dart';
 import '../services/csv_generator.dart';
 import '../services/pdf_generator.dart';
 
 /// Export screen - date range, format (PDF/CSV), generate and share
-class ExportScreen extends StatefulWidget {
+class ExportScreen extends ConsumerStatefulWidget {
   const ExportScreen({
     super.key,
     this.documents = const [],
@@ -21,10 +23,10 @@ class ExportScreen extends StatefulWidget {
   final List<ExportDocument> documents;
 
   @override
-  State<ExportScreen> createState() => _ExportScreenState();
+  ConsumerState<ExportScreen> createState() => _ExportScreenState();
 }
 
-class _ExportScreenState extends State<ExportScreen> {
+class _ExportScreenState extends ConsumerState<ExportScreen> {
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
   String _format = 'pdf';
@@ -85,6 +87,11 @@ class _ExportScreenState extends State<ExportScreen> {
       }
 
       if (mounted) {
+        await SupabaseService.insertExportHistory(
+          format: _format,
+          rangeStart: _startDate,
+          rangeEnd: _endDate,
+        );
         setState(() {
           _isGenerating = false;
           _message = 'Export complete';

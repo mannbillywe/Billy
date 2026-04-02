@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../features/scanner/models/extracted_receipt.dart';
+
 class SupabaseService {
   static SupabaseClient get _client => Supabase.instance.client;
   static String? get _uid => _client.auth.currentUser?.id;
@@ -26,6 +28,8 @@ class SupabaseService {
     String? description,
     String? currency,
     Map<String, dynamic>? extractedData,
+    String status = 'saved',
+    String? categoryId,
   }) async {
     if (_uid == null) return;
     await _client.from('documents').insert({
@@ -39,7 +43,8 @@ class SupabaseService {
       'payment_method': paymentMethod,
       if (currency != null && currency.isNotEmpty) 'currency': currency,
       'extracted_data': extractedData,
-      'status': 'saved',
+      'status': status,
+      if (categoryId != null) 'category_id': categoryId,
     });
   }
 
@@ -73,6 +78,8 @@ class SupabaseService {
     String? paymentMethod,
     String? currency,
     Map<String, dynamic>? extractedData,
+    String? status,
+    String? categoryId,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
@@ -88,7 +95,106 @@ class SupabaseService {
     if (paymentMethod != null) updates['payment_method'] = paymentMethod;
     if (currency != null && currency.isNotEmpty) updates['currency'] = currency;
     if (extractedData != null) updates['extracted_data'] = extractedData;
+    if (status != null) updates['status'] = status;
+    if (categoryId != null) updates['category_id'] = categoryId;
     await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
+  }
+
+  /// Match `categories.name` for default (`user_id` null) or current user rows.
+  static Future<String?> resolveCategoryIdByName(String name) async {
+    final uid = _uid;
+    if (uid == null || name.trim().isEmpty) return null;
+    final n = name.trim().toLowerCase();
+    final res = await _client
+        .from('categories')
+        .select('id,name,user_id')
+        .or('user_id.is.null,user_id.eq.$uid');
+    final list = List<Map<String, dynamic>>.from(res as List);
+    for (final row in list) {
+      final nm = (row['name'] as String?)?.toLowerCase();
+      if (nm == n) return row['id'] as String?;
+    }
+    return null;
+  }
+
+  /// After OCR re-runs on linked invoice, refresh the `documents` row from `invoices` + `invoice_items`.
+  static Future<void> syncDocumentFromLinkedInvoice(String documentId) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    final doc = await fetchDocumentById(documentId);
+    if (doc == null) return;
+    final prev = doc['extracted_data'];
+    final prevMap = prev is Map ? Map<String, dynamic>.from(prev) : <String, dynamic>{};
+    final invoiceId = prevMap['invoice_id']?.toString();
+    if (invoiceId == null || invoiceId.isEmpty) return;
+
+    final inv = await _client.from('invoices').select().eq('id', invoiceId).eq('user_id', uid).maybeSingle();
+    if (inv == null) return;
+    final itemsRes = await _client.from('invoice_items').select().eq('invoice_id', invoiceId);
+    final itemsList = (itemsRes as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+
+    final receipt = ExtractedReceipt.fromInvoiceOcr(
+      Map<String, dynamic>.from(inv as Map),
+      itemsList,
+    );
+    final newEd = Map<String, dynamic>.from(receipt.toJson());
+    const preserveKeys = <String>[
+      'line_selection',
+      'allocation_total',
+      'intent_group_expense',
+      'group_id',
+      'intent_lend_borrow',
+      'lend_type',
+      'lend_counterparty',
+      'invoice_id',
+      'user_flagged_mismatch',
+      'source',
+    ];
+    for (final k in preserveKeys) {
+      if (prevMap[k] != null) newEd[k] = prevMap[k];
+    }
+    newEd['invoice_id'] = invoiceId;
+
+    final taxStored = receipt.cgst + receipt.sgst + receipt.igst > 0
+        ? receipt.cgst + receipt.sgst + receipt.igst
+        : receipt.tax;
+    final descParts = <String>{};
+    if (receipt.category != null && receipt.category!.trim().isNotEmpty) {
+      descParts.add(receipt.category!);
+    }
+    for (final li in receipt.lineItems) {
+      if (li.category != null && li.category!.trim().isNotEmpty) descParts.add(li.category!);
+    }
+
+    final catId = descParts.isNotEmpty ? await resolveCategoryIdByName(descParts.first) : null;
+
+    await updateDocument(
+      id: documentId,
+      vendorName: receipt.vendorName,
+      amount: receipt.total,
+      taxAmount: taxStored,
+      date: receipt.date.isNotEmpty ? receipt.date : doc['date'] as String? ?? '',
+      type: (receipt.invoiceNumber != null && receipt.invoiceNumber!.trim().isNotEmpty) ? 'invoice' : 'receipt',
+      description: descParts.isEmpty ? null : descParts.join(', '),
+      currency: receipt.currency,
+      categoryId: catId,
+      extractedData: newEd,
+    );
+  }
+
+  static Future<void> insertExportHistory({
+    required String format,
+    required DateTime rangeStart,
+    required DateTime rangeEnd,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    await _client.from('export_history').insert({
+      'user_id': uid,
+      'format': format,
+      'date_range_start': rangeStart.toIso8601String().substring(0, 10),
+      'date_range_end': rangeEnd.toIso8601String().substring(0, 10),
+    });
   }
 
   /// Signed URL to open original scan in Storage (invoice OCR pipeline).
@@ -451,7 +557,8 @@ class SupabaseService {
         .from('documents')
         .select('amount')
         .eq('user_id', _uid!)
-        .eq('date', today);
+        .eq('date', today)
+        .neq('status', 'draft');
     double total = 0;
     for (final row in res) {
       total += (row['amount'] as num).toDouble();
@@ -466,7 +573,8 @@ class SupabaseService {
         .select('amount')
         .eq('user_id', _uid!)
         .gte('date', weekStart.toIso8601String().substring(0, 10))
-        .lte('date', weekEnd.toIso8601String().substring(0, 10));
+        .lte('date', weekEnd.toIso8601String().substring(0, 10))
+        .neq('status', 'draft');
     double total = 0;
     for (final row in res) {
       total += (row['amount'] as num).toDouble();
@@ -480,6 +588,7 @@ class SupabaseService {
         .from('documents')
         .select()
         .eq('user_id', _uid!)
+        .neq('status', 'draft')
         .order('date', ascending: false)
         .limit(limit);
     return List<Map<String, dynamic>>.from(res);
@@ -493,7 +602,8 @@ class SupabaseService {
         .from('documents')
         .select('amount, description')
         .eq('user_id', _uid!)
-        .gte('date', weekAgo.toIso8601String().substring(0, 10));
+        .gte('date', weekAgo.toIso8601String().substring(0, 10))
+        .neq('status', 'draft');
     final map = <String, double>{};
     for (final row in res) {
       final cat = (row['description'] as String?) ?? 'Other';
@@ -513,7 +623,8 @@ class SupabaseService {
           .from('documents')
           .select('amount')
           .eq('user_id', _uid!)
-          .eq('date', dayStr);
+          .eq('date', dayStr)
+          .neq('status', 'draft');
       double total = 0;
       for (final row in res) {
         total += (row['amount'] as num).toDouble();
