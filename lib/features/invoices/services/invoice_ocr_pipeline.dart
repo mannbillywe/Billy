@@ -155,48 +155,78 @@ class InvoiceOcrPipeline {
     required String invoiceId,
     required String filePath,
   }) async {
-    final session = client.auth.currentSession;
-    if (session == null) {
-      throw const FunctionException(status: 401, details: 'No session');
-    }
+    // Manual HTTP bypasses [AuthHttpClient], which normally refreshes expired JWTs
+    // for Rest/Storage/Functions. Without this, proxy calls often send a stale access
+    // token → Supabase gateway "Invalid JWT".
     final url = Uri.parse('${Uri.base.origin}/supabase-functions/process-invoice');
-    final httpClient = http.Client();
-    try {
-      final r = await httpClient.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${session.accessToken}',
-          'apikey': SupabaseConfig.anonKey,
-        },
-        body: jsonEncode({
-          'invoice_id': invoiceId,
-          'file_path': filePath,
-        }),
-      );
-      final dynamic data;
-      final ct = r.headers['content-type'] ?? '';
-      if (ct.contains('application/json') && r.body.isNotEmpty) {
-        data = jsonDecode(r.body) as Object?;
-      } else {
-        data = r.body;
+    final body = jsonEncode({
+      'invoice_id': invoiceId,
+      'file_path': filePath,
+    });
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var session = client.auth.currentSession;
+      if (session == null) {
+        throw const FunctionException(status: 401, details: 'No session');
       }
-      if (r.statusCode >= 200 && r.statusCode < 300) {
-        return FunctionResponse(data: data, status: r.statusCode);
+
+      final refreshFirst = session.isExpired || attempt > 0;
+      if (refreshFirst) {
+        try {
+          await client.auth.refreshSession();
+        } catch (e) {
+          BillyLogger.warn('invoice-ocr: refreshSession before proxy', e.toString());
+          throw Exception(
+            'Your session expired. Refresh this page or sign in again, then retry.',
+          );
+        }
+        session = client.auth.currentSession;
+        if (session == null) {
+          throw const FunctionException(status: 401, details: 'No session');
+        }
       }
-      throw FunctionException(
-        status: r.statusCode,
-        details: data,
-        reasonPhrase: r.reasonPhrase,
-      );
-    } on http.ClientException catch (e) {
-      BillyLogger.warn('process-invoice same-origin proxy', e.toString());
-      throw Exception(
-        'Could not reach OCR service. Redeploy the web app so /supabase-functions is proxied, or try again.',
-      );
-    } finally {
-      httpClient.close();
+
+      final httpClient = http.Client();
+      try {
+        final r = await httpClient.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${session.accessToken}',
+            'apikey': SupabaseConfig.anonKey,
+          },
+          body: body,
+        );
+        final dynamic data;
+        final ct = r.headers['content-type'] ?? '';
+        if (ct.contains('application/json') && r.body.isNotEmpty) {
+          data = jsonDecode(r.body) as Object?;
+        } else {
+          data = r.body;
+        }
+        if (r.statusCode >= 200 && r.statusCode < 300) {
+          return FunctionResponse(data: data, status: r.statusCode);
+        }
+        if (attempt == 0 && r.statusCode == 401) {
+          BillyLogger.info('invoice-ocr: retrying process-invoice after HTTP 401');
+          continue;
+        }
+        throw FunctionException(
+          status: r.statusCode,
+          details: data,
+          reasonPhrase: r.reasonPhrase,
+        );
+      } on http.ClientException catch (e) {
+        BillyLogger.warn('process-invoice same-origin proxy', e.toString());
+        throw Exception(
+          'Could not reach OCR service. Redeploy the web app so /supabase-functions is proxied, or try again.',
+        );
+      } finally {
+        httpClient.close();
+      }
     }
+
+    throw StateError('invoice-ocr: proxy retry exhausted');
   }
 
   static Future<void> _waitForInvoiceOcr(SupabaseClient client, String invoiceId) async {
@@ -236,6 +266,8 @@ class InvoiceOcrPipeline {
 
   static String _formatFunctionError(FunctionException e) {
     final d = e.details;
+    final jwtHint = _detailsMentionsInvalidJwt(d);
+    if (jwtHint != null) return jwtHint;
     if (d is Map) {
       if (d['error'] is Map) {
         final inner = d['error'] as Map;
@@ -254,5 +286,21 @@ class InvoiceOcrPipeline {
       default:
         return 'OCR failed (HTTP ${e.status}).';
     }
+  }
+
+  static String? _detailsMentionsInvalidJwt(Object? d) {
+    String? s;
+    if (d is String) s = d;
+    if (d is Map) {
+      s = d['message']?.toString() ??
+          d['msg']?.toString() ??
+          d['error_description']?.toString();
+    }
+    if (s == null) return null;
+    final lower = s.toLowerCase();
+    if (lower.contains('jwt') || lower.contains('invalid token')) {
+      return 'Your session expired. Refresh this page or sign in again, then retry.';
+    }
+    return null;
   }
 }
