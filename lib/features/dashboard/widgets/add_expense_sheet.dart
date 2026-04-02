@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/billy_theme.dart';
+import '../../documents/models/document_category_source.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../services/supabase_service.dart';
@@ -68,6 +69,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
           'source': 'manual',
         },
         categoryId: catId,
+        categorySource: DocumentCategorySource.manual,
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {

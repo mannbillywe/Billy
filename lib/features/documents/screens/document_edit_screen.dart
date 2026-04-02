@@ -7,6 +7,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../services/supabase_service.dart';
 import '../../scanner/models/extracted_receipt.dart';
+import '../models/document_category_source.dart';
 import '../utils/document_json.dart';
 
 const _kCategories = [
@@ -241,6 +242,8 @@ class _DocumentEditScreenState extends ConsumerState<DocumentEditScreen> {
             currency: cur,
             extractedData: ed,
             categoryId: catId,
+            categorySource: DocumentCategorySource.manual,
+            writeCategorySource: true,
           );
 
       if (mounted) {

@@ -282,6 +282,8 @@ State machine: `idle` → `processing` → `success` | `error`
 
 **Category source:** first segment of `documents.description` split by `,`, same as dashboard insights.
 
+**Structured provenance:** `documents.category_source` is set on write — `manual` (add expense / edit), `ai` (scan save), `rule` (invoice sync / name resolution / SQL backfill), `legacy` (rows that already had `category_id` before this column existed). Migration `20260405120000_documents_category_source.sql` backfills `legacy` and rule-matches `category_id` from description vs `categories.name`.
+
 ### 8.2 Document history filters (Phase A1)
 
 **File:** `lib/features/documents/models/document_list_models.dart` — chips on **All documents**:

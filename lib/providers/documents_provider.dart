@@ -23,6 +23,7 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     Map<String, dynamic>? extractedData,
     String status = 'saved',
     String? categoryId,
+    String? categorySource,
   }) async {
     await SupabaseService.insertDocument(
       vendorName: vendorName,
@@ -36,6 +37,7 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       extractedData: extractedData,
       status: status,
       categoryId: categoryId,
+      categorySource: categorySource,
     );
     await refresh();
   }
@@ -58,6 +60,8 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     Map<String, dynamic>? extractedData,
     String? status,
     String? categoryId,
+    String? categorySource,
+    bool writeCategorySource = false,
   }) async {
     await SupabaseService.updateDocument(
       id: id,
@@ -72,6 +76,8 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       extractedData: extractedData,
       status: status,
       categoryId: categoryId,
+      categorySource: categorySource,
+      writeCategorySource: writeCategorySource,
     );
     await refresh();
   }

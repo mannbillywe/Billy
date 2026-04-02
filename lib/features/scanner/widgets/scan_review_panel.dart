@@ -11,6 +11,7 @@ import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/social_provider.dart';
 import '../../../services/supabase_service.dart';
+import '../../documents/models/document_category_source.dart';
 import '../../groups/screens/group_expenses_screen.dart';
 import '../models/extracted_receipt.dart';
 
@@ -244,6 +245,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             currency: draft.currency,
             extractedData: extractedPayload,
             categoryId: categoryId,
+            categorySource: DocumentCategorySource.ai,
           );
 
       if (_useGroup && _groupId != null) {

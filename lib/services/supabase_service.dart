@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../features/documents/models/document_category_source.dart';
 import '../features/scanner/models/extracted_receipt.dart';
 
 class SupabaseService {
@@ -30,6 +31,7 @@ class SupabaseService {
     Map<String, dynamic>? extractedData,
     String status = 'saved',
     String? categoryId,
+    String? categorySource,
   }) async {
     if (_uid == null) return;
     await _client.from('documents').insert({
@@ -45,6 +47,7 @@ class SupabaseService {
       'extracted_data': extractedData,
       'status': status,
       if (categoryId != null) 'category_id': categoryId,
+      if (categorySource != null) 'category_source': categorySource,
     });
   }
 
@@ -80,6 +83,8 @@ class SupabaseService {
     Map<String, dynamic>? extractedData,
     String? status,
     String? categoryId,
+    String? categorySource,
+    bool writeCategorySource = false,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
@@ -97,6 +102,9 @@ class SupabaseService {
     if (extractedData != null) updates['extracted_data'] = extractedData;
     if (status != null) updates['status'] = status;
     if (categoryId != null) updates['category_id'] = categoryId;
+    if (writeCategorySource) {
+      updates['category_source'] = categorySource;
+    }
     await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
   }
 
@@ -178,6 +186,8 @@ class SupabaseService {
       description: descParts.isEmpty ? null : descParts.join(', '),
       currency: receipt.currency,
       categoryId: catId,
+      categorySource: catId != null ? DocumentCategorySource.rule : null,
+      writeCategorySource: true,
       extractedData: newEd,
     );
   }
