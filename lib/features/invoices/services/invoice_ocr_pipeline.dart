@@ -77,7 +77,7 @@ class InvoiceOcrPipeline {
       throw Exception(msg);
     }
 
-    if (res.status != 200) {
+    if (res.status < 200 || res.status >= 300) {
       throw Exception('OCR failed (${res.status})');
     }
 
@@ -87,6 +87,15 @@ class InvoiceOcrPipeline {
     }
 
     final map = Map<String, dynamic>.from(data);
+
+    if (res.status == 202 || map['pending'] == true) {
+      BillyLogger.info('invoice-ocr: accepted (async), polling $invoiceId');
+      await _waitForInvoiceOcr(client, invoiceId);
+      final out = await _receiptFromDb(client, invoiceId);
+      BillyLogger.info('invoice-ocr: completed $invoiceId');
+      return out;
+    }
+
     if (map['success'] != true) {
       final err = map['error'];
       if (err is Map && err['message'] != null) {
@@ -107,6 +116,41 @@ class InvoiceOcrPipeline {
     );
 
     BillyLogger.info('invoice-ocr: completed $invoiceId');
+    return (invoiceId: invoiceId, receipt: receipt);
+  }
+
+  static Future<void> _waitForInvoiceOcr(SupabaseClient client, String invoiceId) async {
+    const maxWait = Duration(seconds: 180);
+    const step = Duration(milliseconds: 750);
+    final deadline = DateTime.now().add(maxWait);
+    while (DateTime.now().isBefore(deadline)) {
+      final row = await client
+          .from('invoices')
+          .select('status,processing_error')
+          .eq('id', invoiceId)
+          .maybeSingle();
+      final s = row?['status'] as String?;
+      if (s == 'completed') return;
+      if (s == 'failed') {
+        final err = row?['processing_error']?.toString();
+        throw Exception(err != null && err.isNotEmpty ? err : 'OCR failed');
+      }
+      await Future<void>.delayed(step);
+    }
+    throw Exception('OCR timed out. Check your connection and try again.');
+  }
+
+  static Future<({String invoiceId, ExtractedReceipt receipt})> _receiptFromDb(
+    SupabaseClient client,
+    String invoiceId,
+  ) async {
+    final inv = await client.from('invoices').select().eq('id', invoiceId).single();
+    final itemsRes = await client.from('invoice_items').select().eq('invoice_id', invoiceId);
+    final itemsList = (itemsRes as List?) ?? const [];
+    final receipt = ExtractedReceipt.fromInvoiceOcr(
+      Map<String, dynamic>.from(inv as Map<dynamic, dynamic>),
+      itemsList.map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+    );
     return (invoiceId: invoiceId, receipt: receipt);
   }
 

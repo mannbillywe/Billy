@@ -6,6 +6,10 @@ import { encode as encodeBase64 } from "https://deno.land/std@0.224.0/encoding/b
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+declare const EdgeRuntime:
+  | { waitUntil: (p: Promise<unknown>) => void }
+  | undefined;
+
 const GEMINI_MODEL = "gemini-2.0-flash";
 
 type Json = Record<string, unknown>;
@@ -73,11 +77,15 @@ function corsHeadersFor(req: Request): Record<string, string> {
   const allowHeaders =
     requested?.trim() ||
     "authorization, x-client-info, apikey, content-type, accept, accept-encoding";
+  const origin = req.headers.get("Origin");
+  const allowOrigin =
+    origin && (origin.startsWith("http://") || origin.startsWith("https://")) ? origin : "*";
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": allowHeaders,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
   };
 }
 
@@ -285,6 +293,185 @@ function parseJsonFromModelText(text: string): Record<string, unknown> {
   return JSON.parse(s) as Record<string, unknown>;
 }
 
+/** Long-running OCR after HTTP 202 — keeps mobile Safari / strict fetch clients from timing out. */
+async function runOcrPipelineBackground(args: {
+  supabaseUrl: string;
+  supabaseAnon: string;
+  authHeader: string;
+  userId: string;
+  invoiceId: string;
+  filePath: string;
+  body: Json;
+  geminiKey: string;
+  mimeType: string;
+}): Promise<void> {
+  const {
+    supabaseUrl,
+    supabaseAnon,
+    authHeader,
+    userId,
+    invoiceId,
+    filePath,
+    body,
+    geminiKey,
+    mimeType,
+  } = args;
+
+  const supabase = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const logInsert = async (
+    status: string,
+    err: string | null,
+    reqPayload: Json | null,
+    resPayload: unknown,
+    norm: unknown,
+  ) => {
+    await supabase.from("invoice_ocr_logs").insert({
+      invoice_id: invoiceId,
+      user_id: userId,
+      request_payload: reqPayload,
+      response_payload: resPayload as Json,
+      normalized_payload: norm as Json,
+      status,
+      error_message: err,
+    });
+  };
+
+  const event = async (step: string, detail?: Json) => {
+    await supabase.from("invoice_processing_events").insert({
+      invoice_id: invoiceId,
+      user_id: userId,
+      step,
+      detail: detail ?? null,
+    });
+  };
+
+  try {
+    const { data: fileData, error: dlErr } = await supabase.storage.from("invoice-files").download(
+      filePath,
+    );
+
+    if (dlErr || !fileData) {
+      const msg = dlErr?.message ?? "Download failed";
+      await logInsert("failed", msg, body, null, null);
+      await event("storage_failed", { error: msg });
+      await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
+        "id",
+        invoiceId,
+      );
+      return;
+    }
+
+    const buf = new Uint8Array(await fileData.arrayBuffer());
+    if (buf.byteLength > 16 * 1024 * 1024) {
+      const msg = "File too large (max 16MB)";
+      await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
+        "id",
+        invoiceId,
+      );
+      return;
+    }
+
+    const b64 = encodeBase64(buf);
+
+    let geminiRaw: unknown = null;
+    let replyText = "";
+    try {
+      const out = await callGeminiOnce(geminiKey, b64, mimeType);
+      geminiRaw = out.raw;
+      replyText = out.replyText;
+    } catch (e) {
+      const msg = String(e);
+      await logInsert("failed", msg, body, geminiRaw, null);
+      await event("gemini_failed", { error: msg.slice(0, 300) });
+      await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
+        "id",
+        invoiceId,
+      );
+      return;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = parseJsonFromModelText(replyText);
+    } catch (e) {
+      const msg = `JSON parse: ${String(e)}`;
+      await logInsert("failed", msg, body, geminiRaw, { text_preview: replyText.slice(0, 2000) });
+      await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
+        "id",
+        invoiceId,
+      );
+      return;
+    }
+
+    const norm = normalizeFromGeminiJson(parsed, replyText);
+    await logInsert("success", null, body, geminiRaw, norm);
+
+    await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
+
+    const itemRows = norm.line_items.map((li) => {
+      let amt = li.amount;
+      if (amt == null && li.unit_price != null && li.quantity != null) {
+        amt = li.unit_price * li.quantity;
+      }
+      return {
+        invoice_id: invoiceId,
+        user_id: userId,
+        assigned_user_id: null,
+        description: li.description,
+        quantity: li.quantity,
+        unit_price: li.unit_price,
+        amount: amt,
+        tax_percent: li.tax_percent,
+        tax_amount: li.tax_amount,
+        item_code: li.item_code,
+        category: li.category,
+      };
+    });
+
+    if (itemRows.length > 0) {
+      await supabase.from("invoice_items").insert(itemRows);
+    }
+
+    const updateRow = {
+      status: "completed",
+      ocr_provider: `google_${GEMINI_MODEL.replace(/[.-]/g, "_")}`,
+      vendor_name: norm.vendor_name,
+      vendor_gstin: norm.vendor_gstin,
+      invoice_number: norm.invoice_number,
+      invoice_date: norm.invoice_date,
+      due_date: norm.due_date,
+      subtotal: norm.subtotal,
+      cgst: norm.cgst,
+      sgst: norm.sgst,
+      igst: norm.igst,
+      cess: norm.cess,
+      discount: norm.discount,
+      total_tax: norm.total_tax,
+      total: norm.total,
+      currency: norm.currency ?? "INR",
+      payment_status: norm.payment_status,
+      raw_text: norm.raw_text,
+      confidence: norm.confidence,
+      document_type: norm.document_type,
+      review_required: true,
+      processing_error: null,
+    };
+
+    await supabase.from("invoices").update(updateRow).eq("id", invoiceId);
+    await event("processing_completed", { items: itemRows.length, model: GEMINI_MODEL });
+  } catch (e) {
+    const msg = `Unexpected: ${String(e)}`;
+    console.error("process-invoice background", e);
+    await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
+      "id",
+      invoiceId,
+    );
+  }
+}
+
 serve(async (req) => {
   const cors = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
@@ -394,7 +581,7 @@ serve(async (req) => {
     }, req);
   }
 
-  const logInsert = async (
+  const logInsertSync = async (
     status: string,
     err: string | null,
     reqPayload: Json | null,
@@ -409,15 +596,6 @@ serve(async (req) => {
       normalized_payload: norm as Json,
       status,
       error_message: err,
-    });
-  };
-
-  const event = async (step: string, detail?: Json) => {
-    await supabase.from("invoice_processing_events").insert({
-      invoice_id: invoiceId,
-      user_id: user.id,
-      step,
-      detail: detail ?? null,
     });
   };
 
@@ -438,7 +616,7 @@ serve(async (req) => {
   if (!geminiKey) {
     const msg =
       "No Gemini API key: set profiles.gemini_api_key for this user and/or GEMINI_API_KEY on the function.";
-    await logInsert("failed", msg, body, null, null);
+    await logInsertSync("failed", msg, body, null, null);
     await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
       "id",
       invoiceId,
@@ -455,158 +633,56 @@ serve(async (req) => {
 
   const keySource = fromProfile.length > 0 ? "profiles.gemini_api_key" : "GEMINI_API_KEY secret";
   console.log(
-    `process-invoice: user=${user.id} key_source=${keySource} model=${GEMINI_MODEL}`,
+    `process-invoice: user=${user.id} key_source=${keySource} model=${GEMINI_MODEL} (async)`,
   );
 
-  await event("processing_started", { file_path: filePath, model: GEMINI_MODEL });
+  await supabase.from("invoice_processing_events").insert({
+    invoice_id: invoiceId,
+    user_id: user.id,
+    step: "processing_started",
+    detail: { file_path: filePath, model: GEMINI_MODEL },
+  });
   await supabase.from("invoices").update({ status: "processing", processing_error: null }).eq(
     "id",
     invoiceId,
   );
 
   const mimeType = (invRow.mime_type as string) || "application/octet-stream";
-  const { data: fileData, error: dlErr } = await supabase.storage.from("invoice-files").download(
+
+  const bg = runOcrPipelineBackground({
+    supabaseUrl,
+    supabaseAnon,
+    authHeader,
+    userId: user.id,
+    invoiceId,
     filePath,
-  );
+    body,
+    geminiKey,
+    mimeType,
+  }).catch((e) => console.error("process-invoice background", e));
 
-  if (dlErr || !fileData) {
-    const msg = dlErr?.message ?? "Download failed";
-    await logInsert("failed", msg, body, null, null);
-    await event("storage_failed", { error: msg });
-    await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
-      "id",
-      invoiceId,
-    );
-    return jsonResponse(
-      { success: false, error: { code: "STORAGE_ERROR", message: "Could not read file from storage" } },
-      req,
-      502,
-    );
-  }
-
-  const buf = new Uint8Array(await fileData.arrayBuffer());
-  if (buf.byteLength > 16 * 1024 * 1024) {
-    const msg = "File too large (max 16MB)";
-    await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
-      "id",
-      invoiceId,
-    );
-    return jsonResponse(
-      { success: false, error: { code: "INVALID_INPUT", message: msg } },
-      req,
-      400,
-    );
-  }
-
-  const b64 = encodeBase64(buf);
-
-  let geminiRaw: unknown = null;
-  let replyText = "";
-  try {
-    const out = await callGeminiOnce(geminiKey, b64, mimeType);
-    geminiRaw = out.raw;
-    replyText = out.replyText;
-  } catch (e) {
-    const msg = String(e);
-    await logInsert("failed", msg, body, geminiRaw, null);
-    await event("gemini_failed", { error: msg.slice(0, 300) });
-    await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
-      "id",
-      invoiceId,
-    );
-    return jsonResponse(
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    EdgeRuntime.waitUntil(bg);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        pending: true,
+        invoice_id: invoiceId,
+      }),
       {
-        success: false,
-        error: { code: "OCR_PROCESSING_FAILED", message: "Gemini request failed" },
+        status: 202,
+        headers: { ...cors, "Content-Type": "application/json" },
       },
-      req,
-      502,
     );
   }
 
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = parseJsonFromModelText(replyText);
-  } catch (e) {
-    const msg = `JSON parse: ${String(e)}`;
-    await logInsert("failed", msg, body, geminiRaw, { text_preview: replyText.slice(0, 2000) });
-    await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
-      "id",
-      invoiceId,
-    );
-    return jsonResponse(
-      {
-        success: false,
-        error: { code: "OCR_PROCESSING_FAILED", message: "Could not parse model output" },
-      },
-      req,
-      502,
-    );
-  }
-
-  const norm = normalizeFromGeminiJson(parsed, replyText);
-  await logInsert("success", null, body, geminiRaw, norm);
-
-  await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
-
-  const itemRows = norm.line_items.map((li) => {
-    let amt = li.amount;
-    if (amt == null && li.unit_price != null && li.quantity != null) {
-      amt = li.unit_price * li.quantity;
-    }
-    return {
-      invoice_id: invoiceId,
-      user_id: user.id,
-      assigned_user_id: null,
-      description: li.description,
-      quantity: li.quantity,
-      unit_price: li.unit_price,
-      amount: amt,
-      tax_percent: li.tax_percent,
-      tax_amount: li.tax_amount,
-      item_code: li.item_code,
-      category: li.category,
-    };
-  });
-
-  if (itemRows.length > 0) {
-    await supabase.from("invoice_items").insert(itemRows);
-  }
-
-  const updateRow = {
-    status: "completed",
-    ocr_provider: `google_${GEMINI_MODEL.replace(/[.-]/g, "_")}`,
-    vendor_name: norm.vendor_name,
-    vendor_gstin: norm.vendor_gstin,
-    invoice_number: norm.invoice_number,
-    invoice_date: norm.invoice_date,
-    due_date: norm.due_date,
-    subtotal: norm.subtotal,
-    cgst: norm.cgst,
-    sgst: norm.sgst,
-    igst: norm.igst,
-    cess: norm.cess,
-    discount: norm.discount,
-    total_tax: norm.total_tax,
-    total: norm.total,
-    currency: norm.currency ?? "INR",
-    payment_status: norm.payment_status,
-    raw_text: norm.raw_text,
-    confidence: norm.confidence,
-    document_type: norm.document_type,
-    review_required: true,
-    processing_error: null,
-  };
-
-  await supabase.from("invoices").update(updateRow).eq("id", invoiceId);
-  await event("processing_completed", { items: itemRows.length, model: GEMINI_MODEL });
-
+  // Local `supabase functions serve`: no waitUntil — run inline and return full payload.
+  await bg;
   const { data: fullInv } = await supabase.from("invoices").select("*").eq("id", invoiceId).single();
   const { data: itemsOut } = await supabase.from("invoice_items").select("*").eq(
     "invoice_id",
     invoiceId,
   );
-
   return jsonResponse({
     success: true,
     invoice: fullInv,
