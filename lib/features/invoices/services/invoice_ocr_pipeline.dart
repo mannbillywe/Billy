@@ -121,9 +121,10 @@ class InvoiceOcrPipeline {
     return (invoiceId: invoiceId, receipt: receipt);
   }
 
-  /// Deployed Flutter web (e.g. Vercel): call Edge Functions via same-origin proxy
-  /// (`web/vercel.json` → `/supabase-functions/*`) so Safari avoids cross-origin fetch failures.
-  static bool get _useSameOriginFunctionProxy {
+  /// Hosted Flutter web (not localhost): prefer direct Edge Function invoke so the
+  /// Supabase [AuthHttpClient] attaches a valid JWT (manual proxy calls bypass that).
+  /// If Safari fails with a network [ClientException], fall back to same-origin proxy.
+  static bool get _isHostedWeb {
     if (!kIsWeb) return false;
     final h = Uri.base.host;
     return h != 'localhost' && h != '127.0.0.1' && h != '[::1]';
@@ -134,20 +135,74 @@ class InvoiceOcrPipeline {
     required String invoiceId,
     required String filePath,
   }) async {
-    if (_useSameOriginFunctionProxy) {
-      return _invokeProcessInvoiceSameOrigin(
-        client,
-        invoiceId: invoiceId,
-        filePath: filePath,
-      );
+    final body = <String, dynamic>{
+      'invoice_id': invoiceId,
+      'file_path': filePath,
+    };
+
+    if (_isHostedWeb) {
+      try {
+        return await client.functions.invoke('process-invoice', body: body);
+      } on http.ClientException catch (e) {
+        BillyLogger.warn(
+          'invoice-ocr: direct invoke failed, same-origin proxy',
+          e.toString(),
+        );
+        return _invokeProcessInvoiceSameOrigin(
+          client,
+          invoiceId: invoiceId,
+          filePath: filePath,
+        );
+      }
     }
-    return client.functions.invoke(
-      'process-invoice',
-      body: {
-        'invoice_id': invoiceId,
-        'file_path': filePath,
-      },
-    );
+
+    return client.functions.invoke('process-invoice', body: body);
+  }
+
+  static Future<void> _ensureAccessTokenForProxy(
+    SupabaseClient client, {
+    required bool rotateAfterUnauthorized,
+  }) async {
+    var session = client.auth.currentSession;
+    if (session == null) {
+      throw const FunctionException(status: 401, details: 'No session');
+    }
+
+    final hasRt =
+        session.refreshToken != null && session.refreshToken!.isNotEmpty;
+
+    if (rotateAfterUnauthorized) {
+      if (!hasRt) {
+        throw Exception(
+          'Scan could not authorize this request. Sign out, sign in again, then retry.',
+        );
+      }
+      try {
+        await client.auth.refreshSession();
+      } catch (e) {
+        BillyLogger.warn('invoice-ocr: refreshSession after 401', e.toString());
+        throw Exception(
+          'Could not refresh your login. Sign out, sign in again, then retry.',
+        );
+      }
+      return;
+    }
+
+    if (session.isExpired) {
+      if (!hasRt) {
+        throw Exception(
+          'Your session expired. Sign in again, then try scanning.',
+        );
+      }
+      try {
+        await client.auth.refreshSession();
+      } catch (e) {
+        BillyLogger.warn('invoice-ocr: refreshSession (expired)', e.toString());
+        throw Exception(
+          'Could not renew your session. Sign out, sign in again, then retry.',
+        );
+      }
+    }
   }
 
   static Future<FunctionResponse> _invokeProcessInvoiceSameOrigin(
@@ -155,9 +210,6 @@ class InvoiceOcrPipeline {
     required String invoiceId,
     required String filePath,
   }) async {
-    // Manual HTTP bypasses [AuthHttpClient], which normally refreshes expired JWTs
-    // for Rest/Storage/Functions. Without this, proxy calls often send a stale access
-    // token → Supabase gateway "Invalid JWT".
     final url = Uri.parse('${Uri.base.origin}/supabase-functions/process-invoice');
     final body = jsonEncode({
       'invoice_id': invoiceId,
@@ -165,25 +217,14 @@ class InvoiceOcrPipeline {
     });
 
     for (var attempt = 0; attempt < 2; attempt++) {
-      var session = client.auth.currentSession;
+      await _ensureAccessTokenForProxy(
+        client,
+        rotateAfterUnauthorized: attempt > 0,
+      );
+
+      final session = client.auth.currentSession;
       if (session == null) {
         throw const FunctionException(status: 401, details: 'No session');
-      }
-
-      final refreshFirst = session.isExpired || attempt > 0;
-      if (refreshFirst) {
-        try {
-          await client.auth.refreshSession();
-        } catch (e) {
-          BillyLogger.warn('invoice-ocr: refreshSession before proxy', e.toString());
-          throw Exception(
-            'Your session expired. Refresh this page or sign in again, then retry.',
-          );
-        }
-        session = client.auth.currentSession;
-        if (session == null) {
-          throw const FunctionException(status: 401, details: 'No session');
-        }
       }
 
       final httpClient = http.Client();
