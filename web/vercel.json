@@ -10,10 +10,6 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/supabase-functions/:path*",
-      "destination": "https://wpzopkigbbldcfpxuvcm.supabase.co/functions/v1/:path*"
-    },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

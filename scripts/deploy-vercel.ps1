@@ -24,6 +24,15 @@ if (Test-Path $vercelSrc) {
     Copy-Item -Force $vercelSrc $vercelDst
 }
 
+# Vercel serverless API routes (proxy for Edge Functions — avoids Safari CORS)
+$apiSrc = Join-Path $projectRoot "web\api"
+$apiDst = Join-Path $buildWeb "api"
+if (Test-Path $apiSrc) {
+    if (-not (Test-Path $apiDst)) { New-Item -ItemType Directory -Path $apiDst | Out-Null }
+    Copy-Item -Force -Recurse "$apiSrc\*" $apiDst
+    Write-Host "Copied api/ serverless functions" -ForegroundColor Gray
+}
+
 if (-not (Test-Path $buildWeb)) {
     Write-Host "Build failed: build/web not found" -ForegroundColor Red
     exit 1
