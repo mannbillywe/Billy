@@ -254,16 +254,26 @@ class InvoiceOcrPipeline {
 
   static String _formatFunctionError(FunctionException e) {
     final d = e.details;
+
+    // Surface the exact upstream error so we can debug production issues.
     if (d is Map) {
+      // Our Vercel proxy wraps the upstream response in _upstream_body.
+      final upstream = d['_upstream_body'];
+      if (upstream is Map) {
+        final msg = upstream['msg'] ?? upstream['message'];
+        if (msg != null) return 'Supabase: $msg (HTTP ${e.status})';
+      }
       if (d['error'] is Map) {
         final inner = d['error'] as Map;
         if (inner['message'] != null) return inner['message'].toString();
       }
       if (d['message'] != null) return d['message'].toString();
     }
+    if (d is String && d.isNotEmpty) return d;
+
     switch (e.status) {
       case 401:
-        return 'Sign in again, then retry.';
+        return 'Sign in again, then retry. (HTTP 401)';
       case 503:
         return 'No Gemini API key configured. Ask the admin to set '
             'GEMINI_API_KEY on the process-invoice function.';
