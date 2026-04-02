@@ -9,6 +9,8 @@ import '../../../core/logging/billy_logger.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../invoices/services/invoice_ocr_pipeline.dart';
 import '../models/extracted_receipt.dart';
+import '../utils/scan_raster_adjust.dart';
+import '../widgets/scan_adjust_preview.dart';
 import '../widgets/scan_error.dart';
 import '../widgets/scan_idle.dart';
 import '../widgets/scan_processing.dart';
@@ -27,6 +29,10 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   String? _invoiceId;
   String? _errorMessage;
   bool _extractInFlight = false;
+  Uint8List? _previewBytes;
+  String? _previewFileName;
+  String? _previewMime;
+  String? _previewSource;
 
   String _mimeTypeForPath(String name) {
     final p = name.toLowerCase();
@@ -48,6 +54,10 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _extractInFlight = true;
       _state = ScanState.processing;
       _errorMessage = null;
+      _previewBytes = null;
+      _previewFileName = null;
+      _previewMime = null;
+      _previewSource = null;
     });
     try {
       final result = await InvoiceOcrPipeline.uploadAndProcess(
@@ -87,7 +97,18 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final bytes = await file.readAsBytes();
     final mime = _mimeTypeForPath(file.name);
     final src = source == ImageSource.camera ? 'camera' : 'gallery';
-    await _runPipeline(bytes: bytes, fileName: file.name, mime: mime, source: src);
+    if (isAdjustableRasterMime(mime)) {
+      if (!mounted) return;
+      setState(() {
+        _state = ScanState.previewAdjust;
+        _previewBytes = Uint8List.fromList(bytes);
+        _previewFileName = file.name;
+        _previewMime = mime;
+        _previewSource = src;
+      });
+    } else {
+      await _runPipeline(bytes: bytes, fileName: file.name, mime: mime, source: src);
+    }
   }
 
   Future<void> _pickFromGallery() => _pickAndExtract(ImageSource.gallery);
@@ -113,7 +134,20 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
     final name = f.name;
     final mime = _mimeTypeForPath(name);
-    await _runPipeline(bytes: bytes, fileName: name, mime: mime, source: 'file');
+    if (mime == 'application/pdf') {
+      await _runPipeline(bytes: bytes, fileName: name, mime: mime, source: 'file');
+    } else if (isAdjustableRasterMime(mime)) {
+      if (!mounted) return;
+      setState(() {
+        _state = ScanState.previewAdjust;
+        _previewBytes = Uint8List.fromList(bytes);
+        _previewFileName = name;
+        _previewMime = mime;
+        _previewSource = 'file';
+      });
+    } else {
+      await _runPipeline(bytes: bytes, fileName: name, mime: mime, source: 'file');
+    }
   }
 
   void _discard() {
@@ -122,6 +156,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _extracted = null;
       _invoiceId = null;
       _errorMessage = null;
+      _previewBytes = null;
+      _previewFileName = null;
+      _previewMime = null;
+      _previewSource = null;
+      _extractInFlight = false;
     });
   }
 
@@ -163,6 +202,17 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   onPhotoLibrary: _extractInFlight ? () {} : _pickFromGallery,
                   onUploadPdf: _extractInFlight ? () {} : _pickFile,
                 ),
+              ScanState.previewAdjust => ScanAdjustPreview(
+                  key: const ValueKey('preview'),
+                  initialBytes: _previewBytes!,
+                  fileName: _previewFileName!,
+                  mimeType: _previewMime!,
+                  source: _previewSource!,
+                  onContinue: (b, fn, m, s) {
+                    _runPipeline(bytes: b, fileName: fn, mime: m, source: s);
+                  },
+                  onRetake: _discard,
+                ),
               ScanState.processing => const ScanProcessing(key: ValueKey('processing')),
               ScanState.success => ScanReviewPanel(
                   key: const ValueKey('review'),
@@ -185,4 +235,4 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 }
 
-enum ScanState { idle, processing, success, error }
+enum ScanState { idle, previewAdjust, processing, success, error }
