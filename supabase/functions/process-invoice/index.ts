@@ -2,7 +2,7 @@
 // API key (first match): profiles.gemini_api_key for JWT user, else Edge secret GEMINI_API_KEY
 // Model: gemini-2.0-flash — balanced latency + cost for invoice/receipt images & PDFs
 
-import { encode as encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
+import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
