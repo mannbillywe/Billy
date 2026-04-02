@@ -2,4 +2,4 @@
 #   GEMINI_API_KEY — optional fallback if profiles.gemini_api_key is empty
 
 [functions.process-invoice]
-verify_jwt = true
+verify_jwt = false
