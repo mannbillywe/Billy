@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../config/supabase_config.dart';
 import '../../../core/logging/billy_logger.dart';
 import '../../scanner/models/extracted_receipt.dart';
 
@@ -64,12 +68,10 @@ class InvoiceOcrPipeline {
 
     FunctionResponse res;
     try {
-      res = await client.functions.invoke(
-        'process-invoice',
-        body: {
-          'invoice_id': invoiceId,
-          'file_path': path,
-        },
+      res = await _invokeProcessInvoice(
+        client,
+        invoiceId: invoiceId,
+        filePath: path,
       );
     } on FunctionException catch (e) {
       final msg = _formatFunctionError(e);
@@ -117,6 +119,84 @@ class InvoiceOcrPipeline {
 
     BillyLogger.info('invoice-ocr: completed $invoiceId');
     return (invoiceId: invoiceId, receipt: receipt);
+  }
+
+  /// Deployed Flutter web (e.g. Vercel): call Edge Functions via same-origin proxy
+  /// (`web/vercel.json` → `/supabase-functions/*`) so Safari avoids cross-origin fetch failures.
+  static bool get _useSameOriginFunctionProxy {
+    if (!kIsWeb) return false;
+    final h = Uri.base.host;
+    return h != 'localhost' && h != '127.0.0.1' && h != '[::1]';
+  }
+
+  static Future<FunctionResponse> _invokeProcessInvoice(
+    SupabaseClient client, {
+    required String invoiceId,
+    required String filePath,
+  }) async {
+    if (_useSameOriginFunctionProxy) {
+      return _invokeProcessInvoiceSameOrigin(
+        client,
+        invoiceId: invoiceId,
+        filePath: filePath,
+      );
+    }
+    return client.functions.invoke(
+      'process-invoice',
+      body: {
+        'invoice_id': invoiceId,
+        'file_path': filePath,
+      },
+    );
+  }
+
+  static Future<FunctionResponse> _invokeProcessInvoiceSameOrigin(
+    SupabaseClient client, {
+    required String invoiceId,
+    required String filePath,
+  }) async {
+    final session = client.auth.currentSession;
+    if (session == null) {
+      throw const FunctionException(status: 401, details: 'No session');
+    }
+    final url = Uri.parse('${Uri.base.origin}/supabase-functions/process-invoice');
+    final httpClient = http.Client();
+    try {
+      final r = await httpClient.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${session.accessToken}',
+          'apikey': SupabaseConfig.anonKey,
+        },
+        body: jsonEncode({
+          'invoice_id': invoiceId,
+          'file_path': filePath,
+        }),
+      );
+      final dynamic data;
+      final ct = r.headers['content-type'] ?? '';
+      if (ct.contains('application/json') && r.body.isNotEmpty) {
+        data = jsonDecode(r.body) as Object?;
+      } else {
+        data = r.body;
+      }
+      if (r.statusCode >= 200 && r.statusCode < 300) {
+        return FunctionResponse(data: data, status: r.statusCode);
+      }
+      throw FunctionException(
+        status: r.statusCode,
+        details: data,
+        reasonPhrase: r.reasonPhrase,
+      );
+    } on http.ClientException catch (e) {
+      BillyLogger.warn('process-invoice same-origin proxy', e.toString());
+      throw Exception(
+        'Could not reach OCR service. Redeploy the web app so /supabase-functions is proxied, or try again.',
+      );
+    } finally {
+      httpClient.close();
+    }
   }
 
   static Future<void> _waitForInvoiceOcr(SupabaseClient client, String invoiceId) async {
