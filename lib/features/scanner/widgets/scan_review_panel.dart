@@ -51,6 +51,9 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
   String _lendType = 'lent';
   final _counterpartyCtrl = TextEditingController();
   String? _linkedUserId;
+  /// Per-line counterparty when [Record lend/borrow] is on and the receipt has line items.
+  late final List<TextEditingController> _lineLendNameCtrl;
+  late final List<String?> _lineLendLinkedUserId;
   bool _saving = false;
 
   @override
@@ -64,6 +67,8 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     _notesCtrl = TextEditingController(text: r.notes ?? '');
     _lineOn = List.generate(r.lineItems.length, (_) => true);
     _lineAssignee = List.generate(r.lineItems.length, (_) => null);
+    _lineLendNameCtrl = List.generate(r.lineItems.length, (_) => TextEditingController());
+    _lineLendLinkedUserId = List.generate(r.lineItems.length, (_) => null);
   }
 
   @override
@@ -74,6 +79,9 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     _catCtrl.dispose();
     _notesCtrl.dispose();
     _counterpartyCtrl.dispose();
+    for (final c in _lineLendNameCtrl) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -105,6 +113,11 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             'index': i,
             'included': i < _lineOn.length ? _lineOn[i] : false,
             'assigned_user_id': i < _lineAssignee.length ? _lineAssignee[i] : null,
+            if (_useLend && i < _lineLendNameCtrl.length)
+              'lend_counterparty_name': _lineLendNameCtrl[i].text.trim().isEmpty
+                  ? null
+                  : _lineLendNameCtrl[i].text.trim(),
+            if (_useLend && i < _lineLendLinkedUserId.length) 'lend_counterparty_user_id': _lineLendLinkedUserId[i],
           }
       ]
       ..['allocation_total'] = alloc
@@ -183,10 +196,26 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     }
 
     if (_useLend) {
-      final name = _counterpartyCtrl.text.trim();
-      if (name.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter counterparty name')));
-        return;
+      final defaultName = _counterpartyCtrl.text.trim();
+      if (draft.lineItems.isEmpty) {
+        if (defaultName.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter counterparty name')));
+          return;
+        }
+      } else {
+        if (defaultName.isEmpty) {
+          for (var i = 0; i < draft.lineItems.length; i++) {
+            if (!_lineOn[i]) continue;
+            if (_lineLendNameCtrl[i].text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Enter a default counterparty below, or a name on each selected line'),
+                ),
+              );
+              return;
+            }
+          }
+        }
       }
     }
 
@@ -288,21 +317,14 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
           paidByUserId: uid,
           expenseDate: DateTime.tryParse(draft.date) ?? DateTime.now(),
           shares: shares,
+          documentId: savedDocId,
         );
         ref.invalidate(groupExpensesProvider(_groupId!));
         ref.invalidate(expenseGroupsNotifierProvider);
       }
 
       if (_useLend) {
-        await ref.read(lendBorrowProvider.notifier).addEntry(
-              counterpartyName: _counterpartyCtrl.text.trim(),
-              amount: alloc,
-              type: _lendType,
-              notes: draft.notes,
-              counterpartyUserId: _linkedUserId,
-              groupId: _groupId,
-              documentId: savedDocId,
-            );
+        await _persistLendBorrowForSave(draft: draft, alloc: alloc, savedDocId: savedDocId);
       }
 
       if (mounted) {
@@ -388,6 +410,66 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// One or more `lend_borrow_entries` — aggregated by (name, linked user id) across lines.
+  Future<void> _persistLendBorrowForSave({
+    required ExtractedReceipt draft,
+    required double alloc,
+    required String? savedDocId,
+  }) async {
+    final notifier = ref.read(lendBorrowProvider.notifier);
+    final defaultName = _counterpartyCtrl.text.trim();
+    if (draft.lineItems.isEmpty) {
+      await notifier.addEntry(
+        counterpartyName: defaultName,
+        amount: alloc,
+        type: _lendType,
+        notes: draft.notes,
+        counterpartyUserId: _linkedUserId,
+        groupId: _groupId,
+        documentId: savedDocId,
+      );
+      return;
+    }
+    final buckets = <String, _LendLineBucket>{};
+    for (var i = 0; i < draft.lineItems.length; i++) {
+      if (!_lineOn[i]) continue;
+      final perLine = _lineLendNameCtrl[i].text.trim();
+      final name = perLine.isNotEmpty ? perLine : defaultName;
+      final link = _lineLendLinkedUserId[i];
+      final key = '$name\u0001${link ?? ''}';
+      final b = buckets.putIfAbsent(key, () => _LendLineBucket(name, link));
+      b.amount += draft.lineItems[i].total;
+      final d = draft.lineItems[i].description.trim();
+      if (d.isNotEmpty) b.labels.add(d);
+    }
+    if (buckets.isEmpty) {
+      await notifier.addEntry(
+        counterpartyName: defaultName,
+        amount: alloc,
+        type: _lendType,
+        notes: draft.notes,
+        counterpartyUserId: _linkedUserId,
+        groupId: _groupId,
+        documentId: savedDocId,
+      );
+      return;
+    }
+    final baseNotes = draft.notes?.trim() ?? '';
+    for (final b in buckets.values) {
+      final lineNote = b.labels.isEmpty ? '' : 'Lines: ${b.labels.join(', ')}';
+      final notes = [baseNotes, lineNote].where((s) => s.isNotEmpty).join('\n');
+      await notifier.addEntry(
+        counterpartyName: b.name,
+        amount: b.amount,
+        type: _lendType,
+        notes: notes.isEmpty ? null : notes,
+        counterpartyUserId: b.linkedUserId,
+        groupId: _groupId,
+        documentId: savedDocId,
+      );
     }
   }
 
@@ -521,6 +603,38 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
                           onChanged: (v) => setState(() => _lineAssignee[i] = v),
                         ),
                       ),
+                    if (_useLend && _lineOn[i]) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _lineLendNameCtrl[i],
+                        decoration: const InputDecoration(
+                          labelText: 'Lend counterparty (optional if default set below)',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      if (connections.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String?>(
+                          value: _lineLendLinkedUserId[i],
+                          decoration: const InputDecoration(
+                            labelText: 'Link contact (line)',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(value: null, child: Text('None')),
+                            for (final c in connections)
+                              DropdownMenuItem(
+                                value: c['other_user_id'] as String,
+                                child: Text(c['display_name'] as String),
+                              ),
+                          ],
+                          onChanged: (v) => setState(() => _lineLendLinkedUserId[i] = v),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),
@@ -600,12 +714,24 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         ],
         SwitchListTile(
           title: const Text('Record lend / borrow'),
-          subtitle: Text('Amount = selected lines (${AppCurrency.format(alloc, currency)})'),
+          subtitle: Text(
+            'Amount = selected lines (${AppCurrency.format(alloc, currency)})'
+            '${_useLend && _useGroup ? ' · Group split and IOUs are separate; you can use both.' : ''}',
+          ),
           value: _useLend,
           onChanged: (v) => setState(() => _useLend = v),
         ),
         if (_useLend) ...[
-          if (connections.isNotEmpty && _linkedUserId == null)
+          if (draft.lineItems.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Per-line names create separate IOUs (same person’s lines are combined). '
+                'Leave a line’s name empty to use the default counterparty below.',
+                style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
+              ),
+            )
+          else if (connections.isNotEmpty && _linkedUserId == null)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
@@ -613,7 +739,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
               ),
             )
-          else if (connections.isEmpty)
+          else if (connections.isEmpty && draft.lineItems.isEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
@@ -639,9 +765,12 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
           const SizedBox(height: 10),
           TextField(
             controller: _counterpartyCtrl,
-            decoration: const InputDecoration(labelText: 'Counterparty name', border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: draft.lineItems.isNotEmpty ? 'Default counterparty (for empty line names)' : 'Counterparty name',
+              border: const OutlineInputBorder(),
+            ),
           ),
-          if (connections.isNotEmpty) ...[
+          if (connections.isNotEmpty && draft.lineItems.isEmpty) ...[
             const SizedBox(height: 10),
             DropdownButtonFormField<String?>(
               value: _linkedUserId,
@@ -683,4 +812,12 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
       ],
     );
   }
+}
+
+class _LendLineBucket {
+  _LendLineBucket(this.name, this.linkedUserId);
+  final String name;
+  final String? linkedUserId;
+  double amount = 0;
+  final List<String> labels = [];
 }

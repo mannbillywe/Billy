@@ -67,10 +67,13 @@ class AnalyticsInsightsService {
   static Future<AnalyticsInsightsResult> refreshRange({
     required String rangePreset,
     bool includeAi = true,
+    /// `both` | `money_coach` | `jai_insight` — matches Edge Function `ai_agents`.
+    String aiAgents = 'both',
   }) async {
     final raw = await _invoke({
       'range_preset': rangePreset,
       'include_ai': includeAi,
+      'ai_agents': aiAgents,
     });
     return AnalyticsInsightsResult.fromInvokeResponse(raw);
   }

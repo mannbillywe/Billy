@@ -179,4 +179,63 @@ class DashboardSpendMath {
     }
     return (collect: collect, pay: pay);
   }
+
+  /// Seven values (Mon–Sun): pending IOUs **created** that day (local), viewer perspective.
+  /// Future days after [now] are zero. Aligns with [lendBorrowAddedThisCalendarWeek] totals.
+  static ({List<double> collect, List<double> pay}) thisWeekDailyLendBorrow(
+    List<Map<String, dynamic>> entries,
+    String? viewerUid, [
+    DateTime? now,
+  ]) {
+    final n = _dateOnly(now ?? DateTime.now());
+    final mon = mondayOfWeek(n);
+    final collectByDay = <DateTime, double>{};
+    final payByDay = <DateTime, double>{};
+    for (final e in entries) {
+      if (e['status'] != 'pending') continue;
+      final created = _parseCreatedDay(e['created_at']);
+      if (created == null || created.isBefore(mon) || created.isAfter(n)) continue;
+      final amount = (e['amount'] as num?)?.toDouble() ?? 0;
+      if (effectiveTypeForViewer(e, viewerUid) == 'lent') {
+        collectByDay[created] = (collectByDay[created] ?? 0) + amount;
+      } else {
+        payByDay[created] = (payByDay[created] ?? 0) + amount;
+      }
+    }
+    final collect = <double>[];
+    final pay = <double>[];
+    for (var i = 0; i < 7; i++) {
+      final day = mon.add(Duration(days: i));
+      if (day.isAfter(n)) {
+        collect.add(0);
+        pay.add(0);
+      } else {
+        final key = _dateOnly(day);
+        collect.add(collectByDay[key] ?? 0);
+        pay.add(payByDay[key] ?? 0);
+      }
+    }
+    return (collect: collect, pay: pay);
+  }
+
+  /// Sum of Mon..today in [thisWeekDailyLendBorrow] equals [lendBorrowAddedThisCalendarWeek] collect+pay split.
+  static bool debugLendWeekSeriesMatchesTotals(
+    List<Map<String, dynamic>> entries,
+    String? viewerUid, [
+    DateTime? now,
+  ]) {
+    final s = thisWeekDailyLendBorrow(entries, viewerUid, now);
+    final n = _dateOnly(now ?? DateTime.now());
+    final mon = mondayOfWeek(n);
+    var c = 0.0;
+    var p = 0.0;
+    for (var i = 0; i < 7; i++) {
+      final day = mon.add(Duration(days: i));
+      if (day.isAfter(n)) break;
+      c += s.collect[i];
+      p += s.pay[i];
+    }
+    final t = lendBorrowAddedThisCalendarWeek(entries, viewerUid, now);
+    return (c - t.collect).abs() < 0.0001 && (p - t.pay).abs() < 0.0001;
+  }
 }

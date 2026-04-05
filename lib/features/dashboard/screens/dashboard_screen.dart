@@ -47,6 +47,7 @@ class DashboardScreen extends ConsumerWidget {
     final lbEntries = lbAsync.valueOrNull ?? [];
     final pendingLb = DashboardSpendMath.pendingLendBorrowTotals(lbEntries, uid);
     final addedLb = DashboardSpendMath.lendBorrowAddedThisCalendarWeek(lbEntries, uid);
+    final lbWeekDaily = DashboardSpendMath.thisWeekDailyLendBorrow(lbEntries, uid);
     final docsStillLoading = docsAsync.isLoading && docsAsync.value == null;
 
     final recentSorted = allDocs.where((d) => (d['status'] as String?) != 'draft').toList()
@@ -126,6 +127,8 @@ class DashboardScreen extends ConsumerWidget {
             weekSpend: weekSpend,
             currencyCode: currency,
             weeklyData: dailyData,
+            lendCollectWeek: lbWeekDaily.collect,
+            lendPayWeek: lbWeekDaily.pay,
             lastWeekSpend: lastWeekSpend,
             friendPendingCollect: pendingLb.collect,
             friendPendingPay: pendingLb.pay,

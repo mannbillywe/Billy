@@ -18,6 +18,8 @@ double _asDouble(dynamic v) {
   return 0;
 }
 
+enum _AiInsightTab { coach, jai }
+
 /// AI Insights segment: rule-based snapshot from cache + manual refresh (one Edge + optional Gemini per tap).
 class AiInsightsPanel extends ConsumerStatefulWidget {
   const AiInsightsPanel({super.key, required this.rangePreset});
@@ -31,6 +33,7 @@ class AiInsightsPanel extends ConsumerStatefulWidget {
 
 class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
   bool _refreshBusy = false;
+  _AiInsightTab _aiTab = _AiInsightTab.coach;
 
   @override
   void initState() {
@@ -114,7 +117,7 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Insights are not regenerated automatically. Tap Refresh when you want updated numbers and a short AI summary (counts toward your monthly refresh limit).',
+                'Insights are not regenerated automatically. Tap Refresh for updated numbers plus Money Coach and JAI Insight (two model calls per refresh when AI is on; counts toward your monthly refresh limit).',
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray600, height: 1.35),
               ),
             ],
@@ -371,52 +374,174 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
       );
     }
 
-    final narrative = result.shortNarrative?.trim();
-    final insights = result.prioritizedInsights;
-    widgets.add(
-      _InsightCard(
-        title: 'Analyst notes (AI)',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (narrative != null && narrative.isNotEmpty)
-              Text(narrative, style: const TextStyle(fontSize: 14, height: 1.4, color: BillyTheme.gray800))
-            else
-              Text(
-                result.geminiUsed == false
-                    ? 'No AI narrative yet. Add a Gemini API key on your profile (or set GEMINI_API_KEY on the function), then tap Refresh insights.'
-                    : 'Tap Refresh insights to generate a short narrative from your data.',
-                style: TextStyle(fontSize: 13, color: BillyTheme.gray500, height: 1.35),
-              ),
-            ...insights.map((Map<String, dynamic> it) {
-              final text = it['text']?.toString() ?? '';
-              final ids = _idSet(it['document_ids']);
-              return Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: InkWell(
-                  onTap: ids.isEmpty ? null : () => _openDocuments(ids),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.arrow_circle_right_outlined,
-                        size: 18,
-                        color: ids.isEmpty ? BillyTheme.gray300 : BillyTheme.emerald600,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(text, style: const TextStyle(fontSize: 13, height: 1.35))),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
+    widgets.add(_buildAiSegment(context, result));
 
     return widgets;
+  }
+
+  Widget _buildAiSegment(BuildContext context, AnalyticsInsightsResult result) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<_AiInsightTab>(
+          segments: [
+            ButtonSegment<_AiInsightTab>(
+              value: _AiInsightTab.coach,
+              label: const Text('Money Coach'),
+              icon: const Icon(Icons.savings_outlined, size: 18),
+            ),
+            ButtonSegment<_AiInsightTab>(
+              value: _AiInsightTab.jai,
+              label: const Text('JAI Insight'),
+              icon: const Icon(Icons.psychology_outlined, size: 18),
+            ),
+          ],
+          selected: {_aiTab},
+          onSelectionChanged: (s) {
+            setState(() => _aiTab = s.first);
+          },
+        ),
+        const SizedBox(height: 12),
+        _InsightCard(
+          title: _aiTab == _AiInsightTab.coach ? 'Money Coach' : 'JAI Insight',
+          child: _aiTab == _AiInsightTab.coach
+              ? _buildMoneyCoachBody(context, result)
+              : _buildJaiInsightBody(result),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMoneyCoachBody(BuildContext context, AnalyticsInsightsResult result) {
+    final narrative = (result.moneyCoachNarrative ?? result.shortNarrative)?.trim();
+    final insights = result.moneyCoachPrioritizedInsights;
+    final actions = result.moneyCoachActionsThisWeek;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (narrative != null && narrative.isNotEmpty)
+          Text(narrative, style: const TextStyle(fontSize: 14, height: 1.4, color: BillyTheme.gray800))
+        else
+          Text(
+            result.geminiUsed == false
+                ? 'No AI narrative yet. Add a Gemini API key (or set GEMINI_API_KEY on the Edge function), then tap Refresh insights.'
+                : 'Tap Refresh insights to generate Money Coach guidance from your snapshot.',
+            style: TextStyle(fontSize: 13, color: BillyTheme.gray500, height: 1.35),
+          ),
+        if (actions.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('This week', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: BillyTheme.emerald700)),
+          const SizedBox(height: 6),
+          ...actions.map(
+            (a) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.check_circle_outline, size: 18, color: BillyTheme.emerald600),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(a, style: const TextStyle(fontSize: 13, height: 1.35))),
+                ],
+              ),
+            ),
+          ),
+        ],
+        ...insights.map((Map<String, dynamic> it) {
+          final text = it['text']?.toString() ?? '';
+          final ids = _idSet(it['document_ids']);
+          return Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: InkWell(
+              onTap: ids.isEmpty ? null : () => _openDocuments(ids),
+              borderRadius: BorderRadius.circular(8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.arrow_circle_right_outlined,
+                    size: 18,
+                    color: ids.isEmpty ? BillyTheme.gray300 : BillyTheme.emerald600,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(text, style: const TextStyle(fontSize: 13, height: 1.35))),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildJaiInsightBody(AnalyticsInsightsResult result) {
+    final narrative = result.jaiInsightNarrative?.trim();
+    final patterns = result.jaiPatterns;
+    final risks = result.jaiRisks;
+    final questions = result.jaiFollowUpQuestions;
+
+    if (narrative == null || narrative.isEmpty) {
+      return Text(
+        result.geminiUsed == false
+            ? 'JAI Insight needs a Gemini API key. After it is configured, refresh to see behavior-focused analysis.'
+            : 'No JAI narrative for this snapshot yet. Tap Refresh insights.',
+        style: TextStyle(fontSize: 13, color: BillyTheme.gray500, height: 1.35),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(narrative, style: const TextStyle(fontSize: 14, height: 1.4, color: BillyTheme.gray800)),
+        if (patterns.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Patterns', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: BillyTheme.gray700)),
+          const SizedBox(height: 6),
+          ...patterns.map((p) {
+            final label = p['label']?.toString().trim();
+            final text = p['text']?.toString() ?? '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.timeline, size: 18, color: BillyTheme.gray600),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label != null && label.isNotEmpty ? '$label — $text' : text,
+                      style: const TextStyle(fontSize: 13, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+        if (risks.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('Risks', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: BillyTheme.red400)),
+          const SizedBox(height: 6),
+          ...risks.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('• $r', style: const TextStyle(fontSize: 13, height: 1.35)),
+            ),
+          ),
+        ],
+        if (questions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('Reflect', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: BillyTheme.gray700)),
+          const SizedBox(height: 6),
+          ...questions.map(
+            (q) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('• $q', style: TextStyle(fontSize: 13, height: 1.35, fontStyle: FontStyle.italic)),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   static Set<String> _idSet(dynamic raw) {

@@ -51,4 +51,33 @@ void main() {
     expect(DashboardSpendMath.thisWeekDocumentSpend(docs, wed), 99);
     expect(DashboardSpendMath.debugSeriesMatchesHero(docs, wed), isTrue);
   });
+
+  test('thisWeekDailyLendBorrow buckets pending entries by created_at (viewer = creator)', () {
+    final wed = DateTime(2026, 4, 9); // Thu week Mon 2026-04-06
+    const viewer = '11111111-1111-1111-1111-111111111111';
+    final entries = <Map<String, dynamic>>[
+      {
+        'status': 'pending',
+        'user_id': viewer,
+        'type': 'lent',
+        'amount': 10,
+        'created_at': '2026-04-06T10:00:00.000Z',
+        'counterparty_user_id': null,
+      },
+      {
+        'status': 'pending',
+        'user_id': viewer,
+        'type': 'borrowed',
+        'amount': 4,
+        'created_at': '2026-04-08T10:00:00.000Z',
+        'counterparty_user_id': null,
+      },
+    ];
+    final s = DashboardSpendMath.thisWeekDailyLendBorrow(entries, viewer, wed);
+    expect(s.collect[0], 10);
+    expect(s.pay[0], 0);
+    expect(s.collect[2], 0);
+    expect(s.pay[2], 4);
+    expect(DashboardSpendMath.debugLendWeekSeriesMatchesTotals(entries, viewer, wed), isTrue);
+  });
 }

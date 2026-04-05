@@ -112,15 +112,13 @@ So invitations, contacts, and groups are loaded when the user lands in the app.
 
 **Data sources (Riverpod)**
 
-- `weekSpendProvider`, `lastWeekSpendProvider` — calendar week vs previous week totals from `documents`
-- `dailySpendProvider` — last **7 days** of spend (one query per day in `SupabaseService.dailySpendForWeek`)
-- `recentDocsProvider` — up to 10 recent `documents`
-- `documentsProvider` — full list for category rollups
+- `documentsProvider` — full list; **calendar week** spend and daily document series come from `DashboardSpendMath` (local dates; uses `created_at` when invoice `date` is outside the week)
+- `lendBorrowProvider` — pending IOUs; **This week** hero also shows `thisWeekDailyLendBorrow` (Mon–Sun bars: collect vs owe by `created_at`, viewer perspective)
 - `profileProvider` — `preferred_currency` for formatting
 
 **Widgets shown (top to bottom)**
 
-1. **`SpendHero`** — week spend, comparison to last week, sparkline-style data from `dailySpendProvider`
+1. **`SpendHero`** — week document spend, last-week comparison, emerald mini area chart (Mon–Sun); optional grouped **lend/borrow** bars when any pending IOUs were created this week; pending totals and “Added this week” text
 2. **Row split:**
    - **`QuickActions`** — Create Bill, Link Bank, Export Data
    - **Column:** `MoneyFlowChart` (7-day bars), `InsightsCard` (total expenses + top categories from `description` first segment)
@@ -231,6 +229,8 @@ State machine: `idle` → `processing` → `success` | `error`
 
 - Vendor, date (`YYYY-MM-DD`), invoice number, category, notes
 - Per–line item: include/exclude checkbox; when “group expense” is on, assign each included line to a **group member**
+- When **Record lend / borrow** is on and there are line items: per-line **counterparty name** and optional **link contact**; lines with an empty name use the **default counterparty** field. Saving **aggregates** by `(name, linked user id)` and calls `addEntry` once per bucket (notes list line descriptions). `line_selection` JSON entries may include `lend_counterparty_name` and `lend_counterparty_user_id`.
+- **Group split + lend / borrow** can both be enabled; the UI notes they are separate actions (ledger split vs IOUs).
 
 **Tax display**
 
@@ -240,13 +240,13 @@ State machine: `idle` → `processing` → `success` | `error`
 
 - Switch: “Create group expense from selection”
 - Chooses group; can open `GroupExpensesScreen` for that group
-- On save: builds **share map** from line assignees (or single assignee if no line items), then `SupabaseService.createGroupExpense` (RPC `create_group_expense`)
+- On save: builds **share map** from line assignees (or single assignee if no line items), then `SupabaseService.createGroupExpense` (RPC `create_group_expense`). When a vault row is created in the same save, passes optional **`document_id`** into the RPC (migration `20260407150000_group_expenses_document_id.sql` adds `group_expenses.document_id`).
 
 **Optional: Record lend / borrow**
 
-- Switch + I lent / I borrowed + counterparty name + optional linked contact
-- Amount used = **selected allocation total**
-- Inserts via `lendBorrowProvider.addEntry`
+- Switch + I lent / I borrowed + counterparty name + optional linked contact (header-only receipts), or default + per-line fields when line items exist
+- Amount used = **selected allocation total** (split across multiple `lend_borrow_entries` when multiple counterparties)
+- Inserts via `lendBorrowProvider.addEntry` (one or more times)
 
 **On Save (always, when valid)**
 

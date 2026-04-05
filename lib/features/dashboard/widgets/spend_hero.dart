@@ -11,6 +11,8 @@ class SpendHero extends StatelessWidget {
     required this.weekSpend,
     required this.currencyCode,
     this.weeklyData = const [],
+    this.lendCollectWeek = const [],
+    this.lendPayWeek = const [],
     this.lastWeekSpend = 0,
     this.friendPendingCollect = 0,
     this.friendPendingPay = 0,
@@ -21,6 +23,10 @@ class SpendHero extends StatelessWidget {
   final double weekSpend;
   final String? currencyCode;
   final List<double> weeklyData;
+  /// Mon–Sun pending IOUs created that day (collect / lent side), viewer perspective.
+  final List<double> lendCollectWeek;
+  /// Mon–Sun pending IOUs created that day (pay / borrowed side).
+  final List<double> lendPayWeek;
   final double lastWeekSpend;
   /// Outstanding pending lend/borrow (viewer perspective).
   final double friendPendingCollect;
@@ -29,11 +35,24 @@ class SpendHero extends StatelessWidget {
   final double friendAddedThisWeekCollect;
   final double friendAddedThisWeekPay;
 
+  static bool _hasLendWeekChart(List<double> c, List<double> p) {
+    if (c.length != 7 || p.length != 7) return false;
+    for (var i = 0; i < 7; i++) {
+      if (c[i] > 0 || p[i] > 0) return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final formatted = AppCurrency.format(weekSpend, currencyCode);
     final changePct = lastWeekSpend > 0 ? (((weekSpend - lastWeekSpend) / lastWeekSpend) * 100).round().abs() : null;
     final isUp = weekSpend >= lastWeekSpend;
+    final showDocChart = weeklyData.length == 7;
+    final showLendChart = _hasLendWeekChart(lendCollectWeek, lendPayWeek);
+    final double overlayH = (showDocChart ? 56.0 : 0.0) +
+        (showDocChart && showLendChart ? 6.0 : 0.0) +
+        (showLendChart ? 46.0 : 0.0);
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -151,21 +170,47 @@ class SpendHero extends StatelessWidget {
                 children: [
                   _LegendDot(
                     color: BillyTheme.emerald500,
-                    label: 'This calendar week (Mon–Sun)',
+                    label: 'Spend · Mon–Sun',
                   ),
+                  if (showLendChart) ...[
+                    const SizedBox(width: 14),
+                    _LegendDot(color: BillyTheme.emerald600, label: 'Collect'),
+                    const SizedBox(width: 10),
+                    _LegendDot(color: BillyTheme.red400, label: 'Owe'),
+                  ],
                 ],
               ),
+              if (overlayH > 0) SizedBox(height: overlayH + 4),
             ],
           ),
-          if (weeklyData.isNotEmpty)
+          if (overlayH > 0)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
-              height: 60,
-              child: Opacity(
-                opacity: 0.5,
-                child: _MiniAreaChart(data: weeklyData),
+              height: overlayH,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (showDocChart)
+                    SizedBox(
+                      height: 56,
+                      child: Opacity(
+                        opacity: 0.5,
+                        child: _MiniAreaChart(data: weeklyData),
+                      ),
+                    ),
+                  if (showDocChart && showLendChart) const SizedBox(height: 6),
+                  if (showLendChart)
+                    SizedBox(
+                      height: 44,
+                      child: _LendBorrowWeekBarChart(
+                        collect: lendCollectWeek,
+                        pay: lendPayWeek,
+                      ),
+                    ),
+                ],
               ),
             ),
         ],
@@ -218,6 +263,56 @@ class _LegendDot extends StatelessWidget {
         const SizedBox(width: 6),
         Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: BillyTheme.emerald700.withValues(alpha: 0.7))),
       ],
+    );
+  }
+}
+
+/// Grouped bars: per day, collect (green) + owe (red) for pending entries created that day.
+class _LendBorrowWeekBarChart extends StatelessWidget {
+  const _LendBorrowWeekBarChart({required this.collect, required this.pay});
+  final List<double> collect;
+  final List<double> pay;
+
+  @override
+  Widget build(BuildContext context) {
+    var maxY = 1.0;
+    for (var i = 0; i < 7; i++) {
+      final sum = collect[i] + pay[i];
+      if (sum > maxY) maxY = sum;
+    }
+    maxY *= 1.15;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY,
+        minY: 0,
+        gridData: const FlGridData(show: false),
+        titlesData: const FlTitlesData(show: false),
+        borderData: FlBorderData(show: false),
+        barTouchData: BarTouchData(enabled: false),
+        barGroups: List.generate(7, (i) {
+          return BarChartGroupData(
+            x: i,
+            groupVertically: false,
+            barsSpace: 2,
+            barRods: [
+              BarChartRodData(
+                toY: collect[i],
+                color: BillyTheme.emerald600.withValues(alpha: 0.75),
+                width: 5,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
+              ),
+              BarChartRodData(
+                toY: pay[i],
+                color: BillyTheme.red400.withValues(alpha: 0.75),
+                width: 5,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
+              ),
+            ],
+          );
+        }),
+      ),
     );
   }
 }

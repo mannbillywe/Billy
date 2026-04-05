@@ -613,17 +613,22 @@ class SupabaseService {
     required String paidByUserId,
     required DateTime expenseDate,
     required List<Map<String, dynamic>> shares,
+    String? documentId,
   }) async {
+    final params = <String, dynamic>{
+      'p_group_id': groupId,
+      'p_title': title,
+      'p_amount': amount,
+      'p_paid_by_user_id': paidByUserId,
+      'p_expense_date': expenseDate.toIso8601String().split('T').first,
+      'p_shares': shares,
+    };
+    if (documentId != null && documentId.isNotEmpty) {
+      params['p_document_id'] = documentId;
+    }
     final res = await _client.rpc(
       'create_group_expense',
-      params: {
-        'p_group_id': groupId,
-        'p_title': title,
-        'p_amount': amount,
-        'p_paid_by_user_id': paidByUserId,
-        'p_expense_date': expenseDate.toIso8601String().split('T').first,
-        'p_shares': shares,
-      },
+      params: params,
     );
     if (res == null) throw StateError('create_group_expense returned null');
     return res.toString();
