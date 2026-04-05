@@ -64,6 +64,33 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
   static const _minProcessingAnimation = Duration(milliseconds: 720);
 
+  /// FilePicker often leaves [PlatformFile.bytes] null for multi-select (especially web).
+  Future<Uint8List?> _readPlatformFileBytes(PlatformFile f) async {
+    if (f.bytes != null && f.bytes!.isNotEmpty) {
+      return Uint8List.fromList(f.bytes!);
+    }
+    final stream = f.readStream;
+    if (stream != null) {
+      final chunks = <int>[];
+      try {
+        await for (final chunk in stream) {
+          chunks.addAll(chunk);
+        }
+      } catch (e, st) {
+        BillyLogger.warn('scan readStream failed', '$e\n$st');
+        return null;
+      }
+      return chunks.isEmpty ? null : Uint8List.fromList(chunks);
+    }
+    return null;
+  }
+
+  String _safeScanFileName(String name, int index) {
+    final t = name.trim();
+    if (t.isEmpty) return 'scan_${index + 1}.jpg';
+    return t;
+  }
+
   String _mimeTypeForPath(String name) {
     final p = name.toLowerCase();
     if (p.endsWith('.png')) return 'image/png';
@@ -167,7 +194,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _extractInFlight = false;
         _state = ScanState.success;
         _extracted = result.receipt;
         _invoiceId = result.invoiceId;
@@ -176,10 +202,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       BillyLogger.extractionFailed(e, stack);
       if (!mounted) return;
       setState(() {
-        _extractInFlight = false;
         _state = ScanState.error;
         _errorMessage = e.toString().split('\n').first;
       });
+    } finally {
+      _extractInFlight = false;
     }
   }
 
@@ -341,14 +368,24 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       return;
     }
     final items = <_BatchPick>[];
-    for (final f in files) {
+    for (var i = 0; i < files.length; i++) {
+      final f = files[i];
       final b = await f.readAsBytes();
+      if (b.isEmpty) continue;
+      final name = _safeScanFileName(f.name, i);
       items.add(_BatchPick(
         bytes: Uint8List.fromList(b),
-        fileName: f.name,
-        mime: _mimeTypeForPath(f.name),
+        fileName: name,
+        mime: _mimeTypeForPath(name),
         source: 'gallery',
       ));
+    }
+    if (items.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read the selected photos. Try again.')),
+      );
+      return;
     }
     await _startBatch(items);
   }
@@ -393,23 +430,18 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _batchQueue = null;
       _batchIndex = 0;
     }
+    // Web multi-select: bytes are usually null — use readStream. Mobile: withData works for multiple.
+    final useStreamForMulti = allowMultiple && kIsWeb;
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
-      withData: true,
+      withData: allowMultiple ? !useStreamForMulti : true,
+      withReadStream: useStreamForMulti,
       allowMultiple: allowMultiple,
     );
     if (res == null || res.files.isEmpty) return;
-    final raw = res.files.where((f) => f.bytes != null && f.bytes!.isNotEmpty).toList();
-    if (raw.isEmpty) {
-      setState(() {
-        _state = ScanState.error;
-        _errorMessage = 'Could not read file bytes';
-      });
-      return;
-    }
     if (allowMultiple) {
-      if (raw.length > _maxBatch) {
+      if (res.files.length > _maxBatch) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Choose at most $_maxBatch files at once.')),
@@ -417,24 +449,40 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         return;
       }
       final items = <_BatchPick>[];
-      for (final f in raw) {
-        final bytes = f.bytes!;
-        final name = f.name;
+      for (var i = 0; i < res.files.length; i++) {
+        final f = res.files[i];
+        final data = await _readPlatformFileBytes(f);
+        if (data == null || data.isEmpty) continue;
+        final name = _safeScanFileName(f.name, i);
         final mime = _mimeTypeForPath(name);
-        items.add(_BatchPick(
-          bytes: Uint8List.fromList(bytes),
-          fileName: name,
-          mime: mime,
-          source: 'file',
-        ));
+        items.add(_BatchPick(bytes: data, fileName: name, mime: mime, source: 'file'));
+      }
+      if (items.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not read those files (common on web for multi-select). Try "Multiple files" again or upload fewer images.',
+            ),
+          ),
+        );
+        return;
       }
       await _startBatch(items);
       return;
     }
 
-    final f = raw.first;
-    final bytes = f.bytes!;
-    final name = f.name;
+    final f = res.files.first;
+    final data = await _readPlatformFileBytes(f);
+    if (data == null || data.isEmpty) {
+      setState(() {
+        _state = ScanState.error;
+        _errorMessage = 'Could not read file bytes';
+      });
+      return;
+    }
+    final bytes = data;
+    final name = _safeScanFileName(f.name, 0);
     final mime = _mimeTypeForPath(name);
     if (mime == 'application/pdf') {
       await _runPipelineDirect(bytes: bytes, fileName: name, mime: mime, source: 'file');
