@@ -246,7 +246,10 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         );
       }
 
-      final docAmount = draft.total > 0 ? draft.total : alloc;
+      // When the receipt has lines, persist the selected total so document amount matches
+      // group splits / lend-borrow (header total can differ if lines are toggled off).
+      final docAmount =
+          draft.lineItems.isNotEmpty ? alloc : (draft.total > 0 ? draft.total : alloc);
       final docDate = draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10);
 
       final savedDocId = await ref.read(documentsProvider.notifier).addDocument(

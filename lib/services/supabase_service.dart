@@ -9,12 +9,22 @@ class SupabaseService {
 
   /// Remote DB may not have applied `documents.category_source` migration yet (PGRST204).
   static bool _isMissingCategorySourceColumnError(Object e) {
+    if (e is PostgrestException) {
+      return e.code == 'PGRST204' &&
+          e.message.contains('category_source') &&
+          e.message.contains('documents');
+    }
     final s = e.toString();
     return s.contains('PGRST204') && s.contains('category_source');
   }
 
   /// Remote DB may not have `lend_borrow_entries.document_id` migration yet (PGRST204).
   static bool _isMissingLendBorrowDocumentIdColumnError(Object e) {
+    if (e is PostgrestException) {
+      return e.code == 'PGRST204' &&
+          e.message.contains('document_id') &&
+          e.message.contains('lend_borrow');
+    }
     final s = e.toString();
     return s.contains('PGRST204') && s.contains('document_id');
   }
