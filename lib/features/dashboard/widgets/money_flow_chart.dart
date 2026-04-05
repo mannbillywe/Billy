@@ -32,7 +32,7 @@ class MoneyFlowChart extends StatelessWidget {
               ],
             ),
             child: const Text(
-              'No spending in the last 7 days',
+              'No document spend this calendar week',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: BillyTheme.gray500),
             ),
@@ -49,7 +49,7 @@ class MoneyFlowChart extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Money Flow',
+          'Money flow (this week)',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
         ),
         const SizedBox(height: 12),
@@ -102,7 +102,7 @@ class MoneyFlowChart extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _Dot(color: BillyTheme.emerald500, label: 'Daily spend'),
+                  _Dot(color: BillyTheme.emerald500, label: 'By day · Mon→Sun'),
                 ],
               ),
             ],

@@ -7,6 +7,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../lend_borrow_perspective.dart';
 import '../../../providers/groups_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
+import '../../documents/screens/document_detail_screen.dart';
 import '../../groups/screens/group_expenses_screen.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/social_provider.dart';
@@ -660,6 +661,9 @@ class _EntryRow extends StatelessWidget {
     final formatted = AppCurrency.format(amount, currencyCode);
     final linked = entry['counterparty_user_id'] != null;
     final roleLine = lendBorrowRoleLine(entry, viewerUid);
+    final docId = entry['document_id']?.toString();
+    final creatorId = entry['user_id']?.toString();
+    final isCreator = viewerUid != null && creatorId == viewerUid;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -680,6 +684,18 @@ class _EntryRow extends StatelessWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (docId != null && docId.isNotEmpty && isCreator)
+                IconButton(
+                  tooltip: 'View document',
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => DocumentDetailScreen(documentId: docId),
+                      ),
+                    );
+                  },
+                ),
               Text(formatted, style: TextStyle(fontWeight: FontWeight.w700, color: isLent ? BillyTheme.emerald600 : BillyTheme.red500)),
               IconButton(icon: const Icon(Icons.check_circle_outline), onPressed: onSettle),
             ],

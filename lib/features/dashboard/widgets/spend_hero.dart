@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 
-/// Hero card using real aggregates (no placeholder balance).
+/// Hero card: **weekSpend** is document-only (receipts & invoices), same basis as [weeklyData].
 class SpendHero extends StatelessWidget {
   const SpendHero({
     super.key,
@@ -12,12 +12,22 @@ class SpendHero extends StatelessWidget {
     required this.currencyCode,
     this.weeklyData = const [],
     this.lastWeekSpend = 0,
+    this.friendPendingCollect = 0,
+    this.friendPendingPay = 0,
+    this.friendAddedThisWeekCollect = 0,
+    this.friendAddedThisWeekPay = 0,
   });
 
   final double weekSpend;
   final String? currencyCode;
   final List<double> weeklyData;
   final double lastWeekSpend;
+  /// Outstanding pending lend/borrow (viewer perspective).
+  final double friendPendingCollect;
+  final double friendPendingPay;
+  /// Pending entries **created** Mon–today this calendar week.
+  final double friendAddedThisWeekCollect;
+  final double friendAddedThisWeekPay;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +68,73 @@ class SpendHero extends StatelessWidget {
                   color: Color(0xFF064E3B),
                 ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                'Receipts & invoices · Mon–today',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: BillyTheme.emerald700.withValues(alpha: 0.55),
+                ),
+              ),
+              if (friendPendingCollect > 0 || friendPendingPay > 0) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: BillyTheme.emerald100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Lend / borrow (pending)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: BillyTheme.emerald700.withValues(alpha: 0.75),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _FriendMiniStat(
+                              label: 'To collect',
+                              amount: friendPendingCollect,
+                              currencyCode: currencyCode,
+                              positive: true,
+                            ),
+                          ),
+                          Expanded(
+                            child: _FriendMiniStat(
+                              label: 'To pay',
+                              amount: friendPendingPay,
+                              currencyCode: currencyCode,
+                              positive: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (friendAddedThisWeekCollect > 0 || friendAddedThisWeekPay > 0) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Added this week: +${AppCurrency.format(friendAddedThisWeekCollect, currencyCode)} collect · '
+                          '+${AppCurrency.format(friendAddedThisWeekPay, currencyCode)} owe',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: BillyTheme.gray600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
               if (changePct != null) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -72,7 +149,10 @@ class SpendHero extends StatelessWidget {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  _LegendDot(color: BillyTheme.emerald500, label: '7-day spend trend'),
+                  _LegendDot(
+                    color: BillyTheme.emerald500,
+                    label: 'This calendar week (Mon–Sun)',
+                  ),
                 ],
               ),
             ],
@@ -90,6 +170,37 @@ class SpendHero extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _FriendMiniStat extends StatelessWidget {
+  const _FriendMiniStat({
+    required this.label,
+    required this.amount,
+    this.currencyCode,
+    required this.positive,
+  });
+  final String label;
+  final double amount;
+  final String? currencyCode;
+  final bool positive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 10, color: BillyTheme.gray500)),
+        Text(
+          AppCurrency.format(amount, currencyCode),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: positive ? BillyTheme.emerald700 : BillyTheme.red500,
+          ),
+        ),
+      ],
     );
   }
 }

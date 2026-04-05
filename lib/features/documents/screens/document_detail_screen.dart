@@ -13,6 +13,7 @@ import '../../../services/supabase_service.dart';
 import '../../analytics/screens/document_ai_review_screen.dart';
 import '../../invoices/services/invoice_ocr_pipeline.dart';
 import '../models/document_list_models.dart';
+import '../utils/document_backdate_hint.dart';
 import '../utils/document_json.dart';
 import 'document_edit_screen.dart';
 
@@ -307,6 +308,8 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     final lendType = ed?['lend_type']?.toString();
     final lendParty = ed?['lend_counterparty']?.toString();
 
+    final backdateHint = DocumentBackdateHint.fromDocumentRow(doc);
+
     final repairPath = _invoiceHeader?['file_path'] as String?;
     final repairId = _invoiceHeader?['id']?.toString();
     final canOcrRepair = ocr &&
@@ -345,6 +348,10 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
               ],
             ],
           ),
+          if (backdateHint != null) ...[
+            const SizedBox(height: 12),
+            _backdateInfoBanner(backdateHint),
+          ],
           const SizedBox(height: 16),
           Text(
             vendor,
@@ -514,6 +521,44 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
               label: const Text('Replace scan file'),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _backdateInfoBanner(DocumentBackdateHint hint) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.history_edu_outlined, size: 20, color: BillyTheme.gray800.withValues(alpha: 0.85)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  hint.bannerTitle,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 28),
+            child: Text(
+              hint.bannerBody,
+              style: TextStyle(fontSize: 12, height: 1.35, color: BillyTheme.gray700.withValues(alpha: 0.95)),
+            ),
+          ),
         ],
       ),
     );

@@ -18,6 +18,7 @@ class LendBorrowNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     String? notes,
     String? counterpartyUserId,
     String? groupId,
+    String? documentId,
   }) async {
     await SupabaseService.insertLendBorrow(
       counterpartyName: counterpartyName,
@@ -26,6 +27,7 @@ class LendBorrowNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       notes: notes,
       counterpartyUserId: counterpartyUserId,
       groupId: groupId,
+      documentId: documentId,
     );
     await refresh();
   }

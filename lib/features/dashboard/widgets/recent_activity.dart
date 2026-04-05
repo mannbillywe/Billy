@@ -11,6 +11,7 @@ class RecentActivityItem {
     required this.category,
     required this.date,
     required this.icon,
+    this.backdateHint,
   });
 
   final String? documentId;
@@ -19,6 +20,9 @@ class RecentActivityItem {
   final String category;
   final String date;
   final String icon;
+
+  /// Shown when invoice [date] is before save day (see [DocumentBackdateHint]).
+  final String? backdateHint;
 }
 
 class RecentActivity extends StatelessWidget {
@@ -85,6 +89,13 @@ class RecentActivity extends StatelessWidget {
                           '${item.category} \u2022 ${item.date}',
                           style: const TextStyle(fontSize: 12, color: BillyTheme.gray500),
                         ),
+                        if (item.backdateHint != null && item.backdateHint!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            item.backdateHint!,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFFC2410C), fontWeight: FontWeight.w500),
+                          ),
+                        ],
                       ],
                     ),
                   ),

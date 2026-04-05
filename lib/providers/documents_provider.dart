@@ -11,7 +11,8 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     state = await AsyncValue.guard(() => SupabaseService.fetchDocuments());
   }
 
-  Future<void> addDocument({
+  /// Returns the new document id, or null if not signed in / insert skipped.
+  Future<String?> addDocument({
     required String vendorName,
     required double amount,
     required double taxAmount,
@@ -25,7 +26,7 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     String? categoryId,
     String? categorySource,
   }) async {
-    await SupabaseService.insertDocument(
+    final id = await SupabaseService.insertDocument(
       vendorName: vendorName,
       amount: amount,
       taxAmount: taxAmount,
@@ -40,6 +41,7 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       categorySource: categorySource,
     );
     await refresh();
+    return id;
   }
 
   Future<void> deleteDoc(String id) async {
@@ -90,32 +92,3 @@ class DocumentsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
 
 final documentsProvider =
     AsyncNotifierProvider<DocumentsNotifier, List<Map<String, dynamic>>>(DocumentsNotifier.new);
-
-// Dashboard aggregations
-final todaySpendProvider = FutureProvider<double>((ref) => SupabaseService.todaySpend());
-
-final weekSpendProvider = FutureProvider<double>((ref) {
-  final now = DateTime.now();
-  final weekday = now.weekday;
-  final start = now.subtract(Duration(days: weekday - 1));
-  return SupabaseService.weekSpend(weekStart: start, weekEnd: now);
-});
-
-final lastWeekSpendProvider = FutureProvider<double>((ref) {
-  final now = DateTime.now();
-  final weekday = now.weekday;
-  final thisWeekStart = now.subtract(Duration(days: weekday - 1));
-  final lastWeekStart = thisWeekStart.subtract(const Duration(days: 7));
-  final lastWeekEnd = thisWeekStart.subtract(const Duration(days: 1));
-  return SupabaseService.weekSpend(weekStart: lastWeekStart, weekEnd: lastWeekEnd);
-});
-
-final recentDocsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
-  ref.watch(documentsProvider);
-  return SupabaseService.recentDocuments(limit: 10);
-});
-
-final dailySpendProvider = FutureProvider<List<double>>((ref) {
-  ref.watch(documentsProvider);
-  return SupabaseService.dailySpendForWeek();
-});

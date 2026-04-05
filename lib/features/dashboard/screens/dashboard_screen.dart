@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../documents/utils/document_backdate_hint.dart';
+import '../utils/dashboard_spend_math.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
 import '../widgets/ocr_banner.dart';
@@ -30,20 +34,31 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final weekAsync = ref.watch(weekSpendProvider);
-    final lastWeekAsync = ref.watch(lastWeekSpendProvider);
-    final recentAsync = ref.watch(recentDocsProvider);
-    final dailyAsync = ref.watch(dailySpendProvider);
     final docsAsync = ref.watch(documentsProvider);
+    final lbAsync = ref.watch(lendBorrowProvider);
     final profile = ref.watch(profileProvider).valueOrNull;
     final currency = profile?['preferred_currency'] as String?;
 
-    final weekSpend = weekAsync.valueOrNull ?? 0;
-    final lastWeekSpend = lastWeekAsync.valueOrNull ?? 0;
-    final recentDocs = recentAsync.valueOrNull ?? [];
     final allDocs = docsAsync.valueOrNull ?? [];
-    final dailyData = dailyAsync.valueOrNull ?? [];
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final weekSpend = DashboardSpendMath.thisWeekDocumentSpend(allDocs);
+    final lastWeekSpend = DashboardSpendMath.lastCalendarWeekDocumentSpend(allDocs);
+    final dailyData = DashboardSpendMath.thisWeekDailyDocumentSpend(allDocs);
+    final lbEntries = lbAsync.valueOrNull ?? [];
+    final pendingLb = DashboardSpendMath.pendingLendBorrowTotals(lbEntries, uid);
+    final addedLb = DashboardSpendMath.lendBorrowAddedThisCalendarWeek(lbEntries, uid);
     final docsStillLoading = docsAsync.isLoading && docsAsync.value == null;
+
+    final recentSorted = allDocs.where((d) => (d['status'] as String?) != 'draft').toList()
+      ..sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '');
+        final db = DateTime.tryParse(b['date']?.toString() ?? '');
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
+    final recentDocs = recentSorted.take(10).toList();
 
     final recentItems = recentDocs.take(5).map((d) {
       final vendor = d['vendor_name'] as String? ?? 'Unknown';
@@ -72,12 +87,15 @@ class DashboardScreen extends ConsumerWidget {
         category: desc.isNotEmpty ? desc.split(',').first.trim() : 'Expense',
         date: formattedDate,
         icon: vendor.isNotEmpty ? vendor[0].toUpperCase() : '?',
+        backdateHint: DocumentBackdateHint.fromDocumentRow(d)?.shortLabel,
       );
     }).toList();
 
+    // Match server spend queries and Analytics overview: drafts are not "saved" spend.
+    final insightDocs = allDocs.where((d) => (d['status'] as String?) != 'draft');
     double totalExpenses = 0;
     final catMap = <String, double>{};
-    for (final d in allDocs) {
+    for (final d in insightDocs) {
       final amount = (d['amount'] as num?)?.toDouble() ?? 0;
       final desc = (d['description'] as String?)?.split(',').first.trim() ?? 'Other';
       totalExpenses += amount;
@@ -109,6 +127,10 @@ class DashboardScreen extends ConsumerWidget {
             currencyCode: currency,
             weeklyData: dailyData,
             lastWeekSpend: lastWeekSpend,
+            friendPendingCollect: pendingLb.collect,
+            friendPendingPay: pendingLb.pay,
+            friendAddedThisWeekCollect: addedLb.collect,
+            friendAddedThisWeekPay: addedLb.pay,
           ),
           const SizedBox(height: 20),
           Row(
