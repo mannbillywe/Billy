@@ -76,6 +76,7 @@ interface DocRow {
   type?: string | null;
   payment_method?: string | null;
   updated_at: string | null;
+  created_at?: string | null;
 }
 
 interface LbRow {
@@ -280,6 +281,7 @@ function buildDeterministic(
   rangeStart: string,
   rangeEnd: string,
   userId: string,
+  dateBasis: InsightsDateBasis,
   ctx: {
     currency: string;
     lbRows: LbRow[];
@@ -628,7 +630,9 @@ function buildDeterministic(
   const exportFreqScore = Math.min(100, ctx.exportsInRangeCount * 20);
   const stackMaturity = Math.min(5, ctx.connectedAppsCount + (ctx.exportsInRangeCount > 0 ? 1 : 0));
 
-  const fingerprint = fingerprintExtended(active, ctx.lbRows, ctx.invoicesInRange, ctx.groupExpensesInRange);
+  const fingerprint = `${dateBasis}|${
+    fingerprintExtended(active, ctx.lbRows, ctx.invoicesInRange, ctx.groupExpensesInRange)
+  }`;
 
   const overview = {
     range: preset,
@@ -750,7 +754,7 @@ function buildDeterministic(
   };
 
   return {
-    period: { preset, start: rangeStart, end: rangeEnd },
+    period: { preset, start: rangeStart, end: rangeEnd, date_basis: dateBasis },
     fingerprint,
     summary: {
       total_spend: overview.total_spend,
@@ -930,6 +934,14 @@ function parseAiAgents(body: Json): AiAgentsMode {
   return "both";
 }
 
+type InsightsDateBasis = "bill_date" | "upload_window";
+
+function parseDateBasis(body: Json): InsightsDateBasis {
+  const v = body.date_basis ?? body.insights_date_basis;
+  if (v === "upload_window" || v === "uploaded_in_range") return "upload_window";
+  return "bill_date";
+}
+
 async function runRangeAi(
   apiKey: string,
   det: Json,
@@ -1082,6 +1094,7 @@ serve(async (req) => {
     );
   }
 
+  const dateBasis = parseDateBasis(body);
   const { start, end, prevStart, prevEnd } = windowForPreset(rangePreset);
   const startStr = toYmd(start);
   const endStr = toYmd(end);
@@ -1089,9 +1102,31 @@ serve(async (req) => {
   const pEndStr = toYmd(prevEnd);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
+  const prevStartIso = prevStart.toISOString();
+  const prevEndIso = prevEnd.toISOString();
 
   const docSelect =
-    "id,amount,date,vendor_name,description,tax_amount,currency,extracted_data,category_id,status,type,payment_method,updated_at";
+    "id,amount,date,vendor_name,description,tax_amount,currency,extracted_data,category_id,status,type,payment_method,updated_at,created_at";
+
+  const docsQuery = dateBasis === "upload_window"
+    ? supabase.from("documents").select(docSelect).eq("user_id", user.id).gte("created_at", startIso).lte(
+      "created_at",
+      endIso,
+    )
+    : supabase.from("documents").select(docSelect).eq("user_id", user.id).gte("date", startStr).lte(
+      "date",
+      endStr,
+    );
+
+  const prevDocsQuery = dateBasis === "upload_window"
+    ? supabase.from("documents").select(docSelect).eq("user_id", user.id).gte("created_at", prevStartIso).lte(
+      "created_at",
+      prevEndIso,
+    )
+    : supabase.from("documents").select(docSelect).eq("user_id", user.id).gte("date", pStartStr).lte(
+      "date",
+      pEndStr,
+    );
 
   const [
     docsRes,
@@ -1104,14 +1139,8 @@ serve(async (req) => {
     exportsRes,
     egmRes,
   ] = await Promise.all([
-    supabase.from("documents").select(docSelect).eq("user_id", user.id).gte("date", startStr).lte(
-      "date",
-      endStr,
-    ),
-    supabase.from("documents").select(docSelect).eq("user_id", user.id).gte("date", pStartStr).lte(
-      "date",
-      pEndStr,
-    ),
+    docsQuery,
+    prevDocsQuery,
     supabase.from("lend_borrow_entries").select(
       "id,user_id,counterparty_user_id,type,status,amount,due_date,created_at,updated_at,counterparty_name",
     ),
@@ -1165,6 +1194,7 @@ serve(async (req) => {
     startStr,
     endStr,
     user.id,
+    dateBasis,
     {
       currency,
       lbRows,

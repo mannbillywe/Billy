@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../../core/utils/analytics_fingerprint.dart';
+import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/usage_limits_provider.dart';
@@ -34,12 +35,13 @@ class AiInsightsPanel extends ConsumerStatefulWidget {
 class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
   bool _refreshBusy = false;
   _AiInsightTab _aiTab = _AiInsightTab.coach;
+  InsightsDateBasis _dateBasis = InsightsDateBasis.billDate;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(analyticsInsightsProvider.notifier).loadCachedSnapshot(widget.rangePreset);
+      ref.read(analyticsInsightsProvider.notifier).loadCachedSnapshot(widget.rangePreset, _dateBasis);
     });
   }
 
@@ -48,15 +50,26 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.rangePreset != widget.rangePreset) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(analyticsInsightsProvider.notifier).loadCachedSnapshot(widget.rangePreset);
+        ref.read(analyticsInsightsProvider.notifier).loadCachedSnapshot(widget.rangePreset, _dateBasis);
       });
     }
+  }
+
+  void _onDateBasisChanged(InsightsDateBasis next) {
+    if (next == _dateBasis) return;
+    setState(() => _dateBasis = next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(analyticsInsightsProvider.notifier).loadCachedSnapshot(widget.rangePreset, _dateBasis);
+    });
   }
 
   Future<void> _onRefreshInsights() async {
     if (_refreshBusy) return;
     setState(() => _refreshBusy = true);
-    final err = await ref.read(analyticsInsightsProvider.notifier).refreshInsights(widget.rangePreset);
+    final err = await ref.read(analyticsInsightsProvider.notifier).refreshInsights(
+          widget.rangePreset,
+          dateBasis: _dateBasis,
+        );
     if (mounted) {
       setState(() => _refreshBusy = false);
       if (err != null) {
@@ -91,12 +104,14 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
     );
     final result = async.valueOrNull;
     final docs = ref.watch(documentsProvider).valueOrNull ?? [];
-    final liveFp = analyticsDataFingerprintForPreset(docs, widget.rangePreset);
     final snapFp = result?.dataFingerprint;
     final insightsStale = result != null &&
-        snapFp != null &&
-        snapFp.isNotEmpty &&
-        liveFp != snapFp;
+        analyticsInsightsDocumentsStale(
+          snapshotFingerprint: snapFp,
+          allDocs: docs,
+          preset: widget.rangePreset,
+          basis: _dateBasis,
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -119,6 +134,32 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
               Text(
                 'Insights are not regenerated automatically. Tap Refresh for updated numbers plus Money Coach and JAI Insight (two model calls per refresh when AI is on; counts toward your monthly refresh limit).',
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray600, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Text('Which date should define this range?', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BillyTheme.emerald700)),
+              const SizedBox(height: 6),
+              SegmentedButton<InsightsDateBasis>(
+                segments: const [
+                  ButtonSegment(
+                    value: InsightsDateBasis.billDate,
+                    label: Text('Bill date'),
+                    tooltip: 'Only documents whose receipt date falls in the range',
+                  ),
+                  ButtonSegment(
+                    value: InsightsDateBasis.uploadWindow,
+                    label: Text('Uploaded in range'),
+                    tooltip: 'Documents you saved in this period, even if the bill date is older',
+                  ),
+                ],
+                selected: {_dateBasis},
+                onSelectionChanged: (s) {
+                  if (s.isEmpty) return;
+                  _onDateBasisChanged(s.first);
+                },
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ],
           ),

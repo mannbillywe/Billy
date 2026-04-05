@@ -1,3 +1,5 @@
+import '../../../core/utils/document_date_range.dart';
+
 /// Parsed payload from `analytics-insights` Edge Function or `analytics_insight_snapshots` row.
 class AnalyticsInsightsResult {
   AnalyticsInsightsResult({
@@ -103,6 +105,15 @@ class AnalyticsInsightsResult {
     final raw = m['follow_up_questions'];
     if (raw is! List) return [];
     return raw.map((e) => e.toString()).where((s) => s.trim().isNotEmpty).toList();
+  }
+
+  /// Basis stored in [deterministic] `period.date_basis` (defaults to bill date for older snapshots).
+  InsightsDateBasis get insightDateBasis {
+    final p = deterministic?['period'];
+    if (p is Map) {
+      return insightsDateBasisFromApi(p['date_basis']?.toString());
+    }
+    return InsightsDateBasis.billDate;
   }
 
   factory AnalyticsInsightsResult.fromInvokeResponse(Map<String, dynamic> j) {

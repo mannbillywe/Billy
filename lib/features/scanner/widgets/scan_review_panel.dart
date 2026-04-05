@@ -14,6 +14,7 @@ import '../../../services/supabase_service.dart';
 import '../../documents/models/document_category_source.dart';
 import '../../groups/screens/group_expenses_screen.dart';
 import '../models/extracted_receipt.dart';
+import '../utils/counterparty_picker_options.dart';
 
 /// Review/edit extraction, select line items, optionally split to a group or record lend/borrow.
 class ScanReviewPanel extends ConsumerStatefulWidget {
@@ -54,9 +55,12 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
   String _lendType = 'lent';
   final _counterpartyCtrl = TextEditingController();
   String? _linkedUserId;
+  /// Selected dropdown key (`u:` / `e:`) when picking from contacts & invites; null = custom name.
+  String? _defaultCounterpartyPickKey;
   /// Per-line counterparty when [Record lend/borrow] is on and the receipt has line items.
   late final List<TextEditingController> _lineLendNameCtrl;
   late final List<String?> _lineLendLinkedUserId;
+  late final List<String?> _lineLendPickKey;
   bool _saving = false;
 
   @override
@@ -72,6 +76,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     _lineAssignee = List.generate(r.lineItems.length, (_) => null);
     _lineLendNameCtrl = List.generate(r.lineItems.length, (_) => TextEditingController());
     _lineLendLinkedUserId = List.generate(r.lineItems.length, (_) => null);
+    _lineLendPickKey = List.generate(r.lineItems.length, (_) => null);
   }
 
   @override
@@ -524,6 +529,17 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     final groups = groupsAsync.valueOrNull ?? [];
     final connAsync = ref.watch(connectionsNotifierProvider);
     final connections = connAsync.valueOrNull ?? [];
+    final invAsync = ref.watch(invitationsNotifierProvider);
+    final invitations = invAsync.valueOrNull ?? [];
+    final myUid = Supabase.instance.client.auth.currentUser?.id ?? '';
+    final counterpartyOptions = CounterpartyPickerOption.build(
+      myUserId: myUid,
+      connections: connections,
+      invitations: invitations,
+    );
+    final optionByKey = {for (final o in counterpartyOptions) o.key: o};
+    String? effectivePickKey(String? key) =>
+        key != null && optionByKey.containsKey(key) ? key : null;
     final members = _membersForGroup(_groupId, groups);
     final alloc = _allocationTotal(draft);
     String memberLabel(Map<String, dynamic> m) {
@@ -642,6 +658,36 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
                       ),
                     if (_useLend && _lineOn[i]) ...[
                       const SizedBox(height: 8),
+                      if (counterpartyOptions.isNotEmpty) ...[
+                        DropdownButtonFormField<String?>(
+                          value: effectivePickKey(_lineLendPickKey[i]),
+                          decoration: const InputDecoration(
+                            labelText: 'Counterparty (contacts & invites)',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(value: null, child: Text('Custom name')),
+                            for (final o in counterpartyOptions)
+                              DropdownMenuItem<String?>(value: o.key, child: Text(o.label)),
+                          ],
+                          onChanged: (k) => setState(() {
+                            _lineLendPickKey[i] = k;
+                            if (k == null) {
+                              _lineLendLinkedUserId[i] = null;
+                            } else if (k.startsWith('u:')) {
+                              _lineLendLinkedUserId[i] = k.substring(2);
+                              final o = optionByKey[k]!;
+                              _lineLendNameCtrl[i].text = o.suggestedName ?? o.label;
+                            } else if (k.startsWith('e:')) {
+                              _lineLendLinkedUserId[i] = null;
+                              final o = optionByKey[k]!;
+                              _lineLendNameCtrl[i].text = o.suggestedName ?? '';
+                            }
+                          }),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       TextField(
                         controller: _lineLendNameCtrl[i],
                         decoration: const InputDecoration(
@@ -649,28 +695,11 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
                           isDense: true,
                           border: OutlineInputBorder(),
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => setState(() {
+                          _lineLendPickKey[i] = null;
+                          _lineLendLinkedUserId[i] = null;
+                        }),
                       ),
-                      if (connections.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<String?>(
-                          value: _lineLendLinkedUserId[i],
-                          decoration: const InputDecoration(
-                            labelText: 'Link contact (line)',
-                            isDense: true,
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            const DropdownMenuItem<String?>(value: null, child: Text('None')),
-                            for (final c in connections)
-                              DropdownMenuItem(
-                                value: c['other_user_id'] as String,
-                                child: Text(c['display_name'] as String),
-                              ),
-                          ],
-                          onChanged: (v) => setState(() => _lineLendLinkedUserId[i] = v),
-                        ),
-                      ],
                     ],
                   ],
                 ),
@@ -768,19 +797,19 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
               ),
             )
-          else if (connections.isNotEmpty && _linkedUserId == null)
+          else if (counterpartyOptions.isNotEmpty && _linkedUserId == null && draft.lineItems.isEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
-                'Link a contact so the other person sees this under the right tab (I lent / I borrowed).',
+                'Pick someone from contacts or pending invites so they see this under the right tab (I lent / I borrowed).',
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
               ),
             )
-          else if (connections.isEmpty && draft.lineItems.isEmpty)
+          else if (counterpartyOptions.isEmpty && draft.lineItems.isEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
-                'Add a friend under People & groups to link them here; otherwise only you will see this entry.',
+                'Invite a contact under People & groups to pick them here; otherwise only you will see this entry.',
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray500),
               ),
             ),
@@ -800,26 +829,46 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             }).toList(),
           ),
           const SizedBox(height: 10),
+          if (counterpartyOptions.isNotEmpty) ...[
+            DropdownButtonFormField<String?>(
+              value: effectivePickKey(_defaultCounterpartyPickKey),
+              decoration: const InputDecoration(
+                labelText: 'Counterparty (contacts & invites)',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('Custom name')),
+                for (final o in counterpartyOptions)
+                  DropdownMenuItem<String?>(value: o.key, child: Text(o.label)),
+              ],
+              onChanged: (k) => setState(() {
+                _defaultCounterpartyPickKey = k;
+                if (k == null) {
+                  _linkedUserId = null;
+                } else if (k.startsWith('u:')) {
+                  _linkedUserId = k.substring(2);
+                  final o = optionByKey[k]!;
+                  _counterpartyCtrl.text = o.suggestedName ?? o.label;
+                } else if (k.startsWith('e:')) {
+                  _linkedUserId = null;
+                  final o = optionByKey[k]!;
+                  _counterpartyCtrl.text = o.suggestedName ?? '';
+                }
+              }),
+            ),
+            const SizedBox(height: 10),
+          ],
           TextField(
             controller: _counterpartyCtrl,
             decoration: InputDecoration(
               labelText: draft.lineItems.isNotEmpty ? 'Default counterparty (for empty line names)' : 'Counterparty name',
               border: const OutlineInputBorder(),
             ),
+            onChanged: (_) => setState(() {
+              _defaultCounterpartyPickKey = null;
+              _linkedUserId = null;
+            }),
           ),
-          if (connections.isNotEmpty && draft.lineItems.isEmpty) ...[
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String?>(
-              value: _linkedUserId,
-              decoration: const InputDecoration(labelText: 'Link contact (optional)', border: OutlineInputBorder()),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('None')),
-                for (final c in connections)
-                  DropdownMenuItem(value: c['other_user_id'] as String, child: Text(c['display_name'] as String)),
-              ],
-              onChanged: (v) => setState(() => _linkedUserId = v),
-            ),
-          ],
         ],
         const SizedBox(height: 16),
         SizedBox(

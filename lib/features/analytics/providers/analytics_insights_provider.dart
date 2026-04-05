@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/document_date_range.dart';
 import '../../../providers/usage_limits_provider.dart';
 import '../../../services/supabase_service.dart';
 import '../models/analytics_insights_models.dart';
@@ -12,18 +13,28 @@ class AnalyticsInsightsNotifier extends Notifier<AsyncValue<AnalyticsInsightsRes
   AsyncValue<AnalyticsInsightsResult?> build() => const AsyncValue.data(null);
 
   /// Loads the last Postgres snapshot for [rangePreset] (no Edge invoke, no Gemini).
-  Future<void> loadCachedSnapshot(String rangePreset) async {
+  /// Ignores rows generated with a different [dateBasis] than the one requested.
+  Future<void> loadCachedSnapshot(String rangePreset, InsightsDateBasis dateBasis) async {
     final row = await SupabaseService.fetchAnalyticsInsightSnapshot(rangePreset);
     if (row == null) {
       state = const AsyncValue.data(null);
       return;
     }
-    state = AsyncValue.data(AnalyticsInsightsResult.fromSnapshotRow(row));
+    final parsed = AnalyticsInsightsResult.fromSnapshotRow(row);
+    if (parsed.insightDateBasis != dateBasis) {
+      state = const AsyncValue.data(null);
+      return;
+    }
+    state = AsyncValue.data(parsed);
   }
 
   /// Manual refresh: one Edge call; at most one Gemini batch per request when [includeAi].
   /// On failure, restores the previous snapshot and returns an error message for a SnackBar.
-  Future<String?> refreshInsights(String rangePreset, {bool includeAi = true}) async {
+  Future<String?> refreshInsights(
+    String rangePreset, {
+    bool includeAi = true,
+    InsightsDateBasis dateBasis = InsightsDateBasis.billDate,
+  }) async {
     final keep = state.valueOrNull;
     try {
       await SupabaseService.incrementRefreshCount();
@@ -36,6 +47,7 @@ class AnalyticsInsightsNotifier extends Notifier<AsyncValue<AnalyticsInsightsRes
       final r = await AnalyticsInsightsService.refreshRange(
         rangePreset: rangePreset,
         includeAi: includeAi,
+        dateBasis: dateBasis,
       );
       if (!r.success) {
         state = keep != null ? AsyncValue.data(keep) : const AsyncValue.data(null);

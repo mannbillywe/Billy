@@ -1,5 +1,28 @@
 import 'package:flutter/foundation.dart';
 
+/// How AI Insights / analytics range includes documents (matches Edge `date_basis`).
+enum InsightsDateBasis {
+  /// Filter by receipt/invoice date on the document.
+  billDate,
+
+  /// Filter by when the document was saved (`created_at`) in the range.
+  uploadWindow,
+}
+
+extension InsightsDateBasisApi on InsightsDateBasis {
+  String get apiValue => switch (this) {
+        InsightsDateBasis.billDate => 'bill_date',
+        InsightsDateBasis.uploadWindow => 'upload_window',
+      };
+}
+
+InsightsDateBasis insightsDateBasisFromApi(String? raw) {
+  if (raw == 'upload_window' || raw == 'uploaded_in_range') {
+    return InsightsDateBasis.uploadWindow;
+  }
+  return InsightsDateBasis.billDate;
+}
+
 @immutable
 class DocumentDateRange {
   const DocumentDateRange(this.start, this.end);
@@ -51,6 +74,23 @@ class DocumentDateRange {
     DocumentDateRange range,
   ) {
     return docs.where((d) => documentInDateRange(d, range)).toList();
+  }
+
+  /// Single-axis filter for analytics (bill date only vs upload time only).
+  static bool documentInInsightsBasis(
+    Map<String, dynamic> d,
+    DocumentDateRange range,
+    InsightsDateBasis basis,
+  ) {
+    if ((d['status'] as String?) == 'draft') return false;
+    final startDay = DateTime(range.start.year, range.start.month, range.start.day);
+    final endDay = DateTime(range.end.year, range.end.month, range.end.day);
+    if (basis == InsightsDateBasis.billDate) {
+      final docDay = _dayOnlyFromField(d['date']);
+      return docDay != null && !docDay.isBefore(startDay) && !docDay.isAfter(endDay);
+    }
+    final createdDay = _dayOnlyFromField(d['created_at']);
+    return createdDay != null && !createdDay.isBefore(startDay) && !createdDay.isAfter(endDay);
   }
 
   /// Last 7 calendar days ending at [endDate], sums document amounts per day.

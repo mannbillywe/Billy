@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../config/supabase_config.dart';
+import '../../../core/utils/document_date_range.dart';
 import '../models/analytics_insights_models.dart';
 
 /// Invokes `analytics-insights` (Supabase Edge or Vercel `/api` proxy on hosted web).
@@ -67,6 +68,7 @@ class AnalyticsInsightsService {
   static Future<AnalyticsInsightsResult> refreshRange({
     required String rangePreset,
     bool includeAi = true,
+    InsightsDateBasis dateBasis = InsightsDateBasis.billDate,
     /// `both` | `money_coach` | `jai_insight` — matches Edge Function `ai_agents`.
     String aiAgents = 'both',
   }) async {
@@ -74,6 +76,7 @@ class AnalyticsInsightsService {
       'range_preset': rangePreset,
       'include_ai': includeAi,
       'ai_agents': aiAgents,
+      'date_basis': dateBasis.apiValue,
     });
     return AnalyticsInsightsResult.fromInvokeResponse(raw);
   }
