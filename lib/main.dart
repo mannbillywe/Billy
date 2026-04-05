@@ -33,17 +33,36 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   Future<void> bootstrap() async {
-    await Supabase.initialize(
-      url: SupabaseConfig.url,
-      anonKey: SupabaseConfig.anonKey,
-      httpClient: kIsWeb ? _NoKeepaliveFetchClient() : null,
-    );
+    try {
+      await Supabase.initialize(
+        url: SupabaseConfig.url,
+        anonKey: SupabaseConfig.anonKey,
+        httpClient: kIsWeb ? _NoKeepaliveFetchClient() : null,
+      );
 
-    runApp(
-      const ProviderScope(
-        child: BillyApp(),
-      ),
-    );
+      runApp(
+        const ProviderScope(
+          child: BillyApp(),
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint('Billy bootstrap failed: $e\n$stack');
+      runApp(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SelectableText(
+                  'Billy could not start.\n\n$e',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   if (_sentryDsn.isNotEmpty) {

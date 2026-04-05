@@ -20,8 +20,22 @@ if (Test-Path $defineFile) {
     $defineArgs = @("--dart-define-from-file=$defineFile")
     Write-Host "Using dart-define-from-file: config\prod.json" -ForegroundColor Gray
 }
+# Vercel Dashboard: set SUPABASE_URL and SUPABASE_ANON_KEY on the project so release builds embed the right project.
+$envDefines = @()
+if ($env:SUPABASE_URL -and $defineArgs.Count -eq 0) {
+    $envDefines += "--dart-define=SUPABASE_URL=$($env:SUPABASE_URL)"
+    Write-Host "Using SUPABASE_URL from environment" -ForegroundColor Gray
+}
+if ($env:SUPABASE_ANON_KEY -and $defineArgs.Count -eq 0) {
+    $envDefines += "--dart-define=SUPABASE_ANON_KEY=$($env:SUPABASE_ANON_KEY)"
+    Write-Host "Using SUPABASE_ANON_KEY from environment" -ForegroundColor Gray
+}
+if ($env:SENTRY_DSN) {
+    $envDefines += "--dart-define=SENTRY_DSN=$($env:SENTRY_DSN)"
+    Write-Host "Using SENTRY_DSN from environment" -ForegroundColor Gray
+}
 # --pwa-strategy=none: avoid service worker serving stale JS (old Edge function names / broken scan on iOS).
-& flutter build web --release @defineArgs --pwa-strategy=none
+& flutter build web --release @defineArgs @envDefines --pwa-strategy=none
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # SPA fallback for Flutter web client routing
