@@ -68,6 +68,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _showMsg(e.message, error: true);
     } catch (_) {
       _showMsg('Something went wrong. Please try again.', error: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -91,6 +93,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _showMsg(e.message, error: true);
     } catch (_) {
       _showMsg('Something went wrong. Please try again.', error: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -109,6 +113,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _showMsg(e.message, error: true);
     } catch (_) {
       _showMsg('Something went wrong. Please try again.', error: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -125,6 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _showMsg(_googleAuthHint(e.message), error: true);
     } catch (_) {
       _showMsg(_googleAuthHint(null), error: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -142,12 +150,14 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.apple,
-        redirectTo: kIsWeb ? null : 'io.supabase.billy://login-callback/',
+        redirectTo: kIsWeb ? Uri.base.origin : 'io.supabase.billy://login-callback/',
       );
     } on AuthException catch (e) {
       _showMsg(e.message, error: true);
     } catch (_) {
       _showMsg('Apple sign-in failed. Make sure Apple is enabled in your Supabase dashboard.', error: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -206,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
             'assets/branding/billy_logo.png',
             height: 80,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Container(
+            errorBuilder: (context, error, stackTrace) => Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
