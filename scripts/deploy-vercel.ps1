@@ -13,8 +13,15 @@ if (-not $flutter) {
     Write-Host "flutter not on PATH. Install Flutter or add it to PATH." -ForegroundColor Red
     exit 1
 }
+# Optional: config/prod.json with SUPABASE_URL, SUPABASE_ANON_KEY, SENTRY_DSN (see config/example.json)
+$defineFile = Join-Path $projectRoot "config\prod.json"
+$defineArgs = @()
+if (Test-Path $defineFile) {
+    $defineArgs = @("--dart-define-from-file=$defineFile")
+    Write-Host "Using dart-define-from-file: config\prod.json" -ForegroundColor Gray
+}
 # --pwa-strategy=none: avoid service worker serving stale JS (old Edge function names / broken scan on iOS).
-& flutter build web --release --pwa-strategy=none
+& flutter build web --release @defineArgs --pwa-strategy=none
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # SPA fallback for Flutter web client routing

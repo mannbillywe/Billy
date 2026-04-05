@@ -1,0 +1,7 @@
+# Copy to key.properties (gitignored) and fill in for Play Store release signing.
+# See https://docs.flutter.dev/deployment/android
+
+storePassword=your-keystore-password
+keyPassword=your-key-password
+keyAlias=upload
+storeFile=C:/path/to/your/upload-keystore.jks

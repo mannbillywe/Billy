@@ -4,26 +4,11 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+import { corsHeadersFor } from "../_shared/cors.ts";
+
 const GEMINI_MODEL = "gemini-2.5-flash-lite";
 
 type Json = Record<string, unknown>;
-
-function corsHeadersFor(req: Request): Record<string, string> {
-  const requested = req.headers.get("access-control-request-headers");
-  const allowHeaders =
-    requested?.trim() ||
-    "authorization, x-client-info, apikey, content-type, accept, accept-encoding";
-  const origin = req.headers.get("Origin");
-  const allowOrigin =
-    origin && (origin.startsWith("http://") || origin.startsWith("https://")) ? origin : "*";
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Headers": allowHeaders,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-}
 
 function jsonResponse(body: Json, req: Request, status = 200): Response {
   const cors = corsHeadersFor(req);
@@ -259,15 +244,18 @@ function rollup(
   };
 }
 
-async function resolveGeminiKey(
-  supabase: ReturnType<typeof createClient>,
-  _userId: string,
-): Promise<{ key: string; source: string } | null> {
-  // Use shared app_api_keys table, fall back to env secret
+async function resolveGeminiKey(): Promise<{ key: string; source: string } | null> {
+  const fromSecret = Deno.env.get("GEMINI_API_KEY")?.trim() ?? "";
+  if (fromSecret.length > 0) {
+    return { key: fromSecret, source: "GEMINI_API_KEY" };
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const serviceClient = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? supabaseAnon}` } },
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (!serviceRoleKey) return null;
+
+  const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: sharedRow } = await serviceClient
     .from("app_api_keys")
@@ -277,11 +265,8 @@ async function resolveGeminiKey(
     .maybeSingle();
 
   const fromShared = (sharedRow?.api_key as string | null)?.trim() ?? "";
-  const fromSecret = Deno.env.get("GEMINI_API_KEY")?.trim() ?? "";
-  const key = fromShared.length > 0 ? fromShared : fromSecret;
-  if (!key) return null;
-  const source = fromShared.length > 0 ? "app_api_keys" : "GEMINI_API_KEY";
-  return { key, source };
+  if (!fromShared) return null;
+  return { key: fromShared, source: "app_api_keys" };
 }
 
 async function callGeminiRangeInsights(apiKey: string, det: Json): Promise<Json | null> {
@@ -304,14 +289,17 @@ ${JSON.stringify(det)}
 Return JSON shape:
 {"short_narrative":"","prioritized_insights":[{"type":"","text":"","document_ids":[]}]}`;
 
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 60_000);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
     }),
-  });
+  }).finally(() => clearTimeout(tid));
 
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) {
@@ -349,14 +337,17 @@ async function callGeminiDocumentReview(apiKey: string, docSummary: Json): Promi
 Input:
 ${JSON.stringify(docSummary)}`;
 
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 60_000);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
     }),
-  });
+  }).finally(() => clearTimeout(tid));
 
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) return null;
@@ -388,6 +379,18 @@ serve(async (req) => {
       { success: false, error: { code: "METHOD_NOT_ALLOWED", message: "POST only" } },
       req,
       405,
+    );
+  }
+
+  const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
+  if (contentLength > 1_048_576) {
+    return jsonResponse(
+      {
+        success: false,
+        error: { code: "PAYLOAD_TOO_LARGE", message: "Request body too large (max 1 MB)" },
+      },
+      req,
+      413,
     );
   }
 
@@ -467,7 +470,7 @@ serve(async (req) => {
     let ai_layer: Json | null = null;
     let gemini_used = false;
     if (includeAi) {
-      const keyInfo = await resolveGeminiKey(supabase, user.id);
+      const keyInfo = await resolveGeminiKey();
       if (keyInfo) {
         ai_layer = await callGeminiDocumentReview(keyInfo.key, det);
         gemini_used = ai_layer != null;
@@ -538,7 +541,7 @@ serve(async (req) => {
   let ai_layer: Json | null = null;
   let gemini_used = false;
   if (includeAi) {
-    const keyInfo = await resolveGeminiKey(supabase, user.id);
+    const keyInfo = await resolveGeminiKey();
     if (keyInfo) {
       ai_layer = await callGeminiRangeInsights(keyInfo.key, deterministic);
       gemini_used = ai_layer != null;

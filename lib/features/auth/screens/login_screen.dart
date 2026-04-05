@@ -314,7 +314,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _InputField(
               controller: _passwordCtrl,
               label: 'Password',
-              hint: _mode == _AuthMode.signUp ? 'Min 6 characters' : 'Your password',
+              hint: _mode == _AuthMode.signUp ? 'Min 8 characters' : 'Your password',
               icon: Icons.lock_outline_rounded,
               obscure: _obscurePassword,
               suffixIcon: IconButton(
@@ -327,7 +327,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Enter a password';
-                if (_mode == _AuthMode.signUp && v.length < 6) return 'Password must be at least 6 characters';
+                if (_mode == _AuthMode.signUp && v.length < 8) return 'Password must be at least 8 characters';
                 return null;
               },
             ),

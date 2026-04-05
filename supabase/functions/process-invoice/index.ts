@@ -6,6 +6,8 @@ import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+import { corsHeadersFor } from "../_shared/cors.ts";
+
 declare const EdgeRuntime:
   | { waitUntil: (p: Promise<unknown>) => void }
   | undefined;
@@ -73,23 +75,6 @@ Rules:
 - Amounts as numbers (strip ₹, Rs, commas).
 - extraction_confidence: "high", "medium", or "low".
 - Return ONLY valid JSON.`;
-
-function corsHeadersFor(req: Request): Record<string, string> {
-  const requested = req.headers.get("access-control-request-headers");
-  const allowHeaders =
-    requested?.trim() ||
-    "authorization, x-client-info, apikey, content-type, accept, accept-encoding";
-  const origin = req.headers.get("Origin");
-  const allowOrigin =
-    origin && (origin.startsWith("http://") || origin.startsWith("https://")) ? origin : "*";
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Headers": allowHeaders,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-}
 
 function jsonResponse(body: Json, req: Request, status = 200): Response {
   const cors = corsHeadersFor(req);
@@ -260,9 +245,13 @@ async function callGeminiOnce(
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60_000);
+
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
     body: JSON.stringify({
       contents: [
         {
@@ -274,7 +263,7 @@ async function callGeminiOnce(
       ],
       generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
     }),
-  });
+  }).finally(() => clearTimeout(timeoutId));
 
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) {
@@ -501,6 +490,18 @@ serve(async (req) => {
     );
   }
 
+  const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
+  if (contentLength > 1_048_576) {
+    return jsonResponse(
+      {
+        success: false,
+        error: { code: "PAYLOAD_TOO_LARGE", message: "Request body too large (max 1 MB)" },
+      },
+      req,
+      413,
+    );
+  }
+
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return jsonResponse(
@@ -512,6 +513,29 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  const geminiEnv = Deno.env.get("GEMINI_API_KEY")?.trim() ?? "";
+
+  const serviceClient = serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : null;
+
+  if (!serviceClient && !geminiEnv) {
+    return jsonResponse(
+      {
+        success: false,
+        error: {
+          code: "CONFIG_ERROR",
+          message: "Set SUPABASE_SERVICE_ROLE_KEY (for shared DB keys) and/or GEMINI_API_KEY on the function.",
+        },
+      },
+      req,
+      500,
+    );
+  }
+
   const supabase = createClient(supabaseUrl, supabaseAnon, {
     global: { headers: { Authorization: authHeader } },
   });
@@ -596,6 +620,30 @@ serve(async (req) => {
     }, req);
   }
 
+  const RATE_WINDOW_MS = 60 * 60 * 1000;
+  const MAX_REPROCESS_PER_WINDOW = 10;
+  if (forceReprocess && serviceClient) {
+    const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
+    const { count, error: rcErr } = await serviceClient
+      .from("invoice_processing_events")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("step", "force_reprocess_enqueued")
+      .gte("created_at", since);
+    if (rcErr) {
+      console.error("process-invoice: reprocess rate count", rcErr.message);
+    } else if ((count ?? 0) >= MAX_REPROCESS_PER_WINDOW) {
+      return jsonResponse(
+        {
+          success: false,
+          error: { code: "RATE_LIMITED", message: "Too many reprocess requests this hour. Try again later." },
+        },
+        req,
+        429,
+      );
+    }
+  }
+
   const logInsertSync = async (
     status: string,
     err: string | null,
@@ -614,20 +662,17 @@ serve(async (req) => {
     });
   };
 
-  // Resolve Gemini key: shared app_api_keys table → env secret fallback
-  const serviceClient = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? supabaseAnon}` } },
-  });
-  const { data: sharedRow } = await serviceClient
-    .from("app_api_keys")
-    .select("api_key")
-    .eq("provider", "gemini")
-    .eq("is_active", true)
-    .maybeSingle();
-
-  const fromShared = (sharedRow?.api_key as string | null)?.trim() ?? "";
-  const fromSecret = Deno.env.get("GEMINI_API_KEY")?.trim() ?? "";
-  const geminiKey = fromShared.length > 0 ? fromShared : fromSecret;
+  let fromShared = "";
+  if (serviceClient) {
+    const { data: sharedRow } = await serviceClient
+      .from("app_api_keys")
+      .select("api_key")
+      .eq("provider", "gemini")
+      .eq("is_active", true)
+      .maybeSingle();
+    fromShared = (sharedRow?.api_key as string | null)?.trim() ?? "";
+  }
+  const geminiKey = fromShared.length > 0 ? fromShared : geminiEnv;
 
   if (!geminiKey) {
     const msg =
@@ -648,16 +693,24 @@ serve(async (req) => {
   }
 
   const keySource = fromShared.length > 0 ? "app_api_keys" : "GEMINI_API_KEY secret";
-  const keyPrefix = geminiKey.slice(0, 8);
   console.log(
-    `process-invoice: user=${user.id} key_source=${keySource} key_prefix=${keyPrefix}… model=${GEMINI_MODEL} (async)`,
+    `process-invoice: user=${user.id} key_source=${keySource} model=${GEMINI_MODEL} (async)`,
   );
+
+  if (forceReprocess) {
+    await supabase.from("invoice_processing_events").insert({
+      invoice_id: invoiceId,
+      user_id: user.id,
+      step: "force_reprocess_enqueued",
+      detail: { file_path: filePath },
+    });
+  }
 
   await supabase.from("invoice_processing_events").insert({
     invoice_id: invoiceId,
     user_id: user.id,
     step: "processing_started",
-    detail: { file_path: filePath, model: GEMINI_MODEL },
+    detail: { file_path: filePath, model: GEMINI_MODEL, force_reprocess: forceReprocess },
   });
   await supabase.from("invoices").update({ status: "processing", processing_error: null }).eq(
     "id",

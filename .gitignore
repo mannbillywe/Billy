@@ -3,6 +3,18 @@
 .env.local
 .env.*.local
 
+# Dart-define secrets (see config/example.json)
+config/dev.json
+config/staging.json
+config/prod.json
+
+# Android release signing
+*.jks
+*.keystore
+key.properties
+google-services.json
+GoogleService-Info.plist
+
 # Node (Supabase CLI)
 node_modules/
 supabase/.temp/

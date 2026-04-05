@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/app.dart';
@@ -26,20 +27,34 @@ class _NoKeepaliveFetchClient extends http.BaseClient {
   }
 }
 
-void main() async {
+const _sentryDsn = String.fromEnvironment('SENTRY_DSN');
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Web: Fetch API with CORS mode for Supabase (Storage + Edge Functions) from Vercel.
-  // Mobile/desktop: default IO client.
-  await Supabase.initialize(
-    url: SupabaseConfig.url,
-    anonKey: SupabaseConfig.anonKey,
-    httpClient: kIsWeb ? _NoKeepaliveFetchClient() : null,
-  );
+  Future<void> bootstrap() async {
+    await Supabase.initialize(
+      url: SupabaseConfig.url,
+      anonKey: SupabaseConfig.anonKey,
+      httpClient: kIsWeb ? _NoKeepaliveFetchClient() : null,
+    );
 
-  runApp(
-    const ProviderScope(
-      child: BillyApp(),
-    ),
-  );
+    runApp(
+      const ProviderScope(
+        child: BillyApp(),
+      ),
+    );
+  }
+
+  if (_sentryDsn.isNotEmpty) {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn = _sentryDsn;
+        options.tracesSampleRate = kDebugMode ? 1.0 : 0.2;
+      },
+      appRunner: bootstrap,
+    );
+  } else {
+    await bootstrap();
+  }
 }

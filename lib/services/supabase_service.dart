@@ -475,6 +475,21 @@ class SupabaseService {
     }
   }
 
+  /// Batch profile lookup (avoids N+1 in connections UI).
+  static Future<List<Map<String, dynamic>>> fetchProfilesByIds(List<String> userIds) async {
+    final unique = userIds.toSet().toList();
+    if (unique.isEmpty) return [];
+    try {
+      final res = await _client
+          .from('profiles')
+          .select('id, display_name, avatar_url')
+          .inFilter('id', unique);
+      return List<Map<String, dynamic>>.from(res as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ─── Expense groups ──────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchExpenseGroups() async {
     if (_uid == null) return [];
@@ -717,21 +732,27 @@ class SupabaseService {
   static Future<List<double>> dailySpendForWeek() async {
     if (_uid == null) return List.filled(7, 0);
     final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 6));
+    final startStr = start.toIso8601String().substring(0, 10);
+    final endStr = now.toIso8601String().substring(0, 10);
+    final res = await _client
+        .from('documents')
+        .select('date, amount')
+        .eq('user_id', _uid!)
+        .gte('date', startStr)
+        .lte('date', endStr)
+        .neq('status', 'draft');
+    final byDay = <String, double>{};
+    for (final row in res) {
+      final d = row['date'] as String?;
+      if (d == null) continue;
+      final a = (row['amount'] as num?)?.toDouble() ?? 0;
+      byDay[d] = (byDay[d] ?? 0) + a;
+    }
     final result = <double>[];
     for (int i = 6; i >= 0; i--) {
-      final day = now.subtract(Duration(days: i));
-      final dayStr = day.toIso8601String().substring(0, 10);
-      final res = await _client
-          .from('documents')
-          .select('amount')
-          .eq('user_id', _uid!)
-          .eq('date', dayStr)
-          .neq('status', 'draft');
-      double total = 0;
-      for (final row in res) {
-        total += (row['amount'] as num).toDouble();
-      }
-      result.add(total);
+      final dayStr = now.subtract(Duration(days: i)).toIso8601String().substring(0, 10);
+      result.add(byDay[dayStr] ?? 0);
     }
     return result;
   }
