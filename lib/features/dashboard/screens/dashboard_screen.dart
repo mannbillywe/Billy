@@ -43,6 +43,7 @@ class DashboardScreen extends ConsumerWidget {
     final recentDocs = recentAsync.valueOrNull ?? [];
     final allDocs = docsAsync.valueOrNull ?? [];
     final dailyData = dailyAsync.valueOrNull ?? [];
+    final docsStillLoading = docsAsync.isLoading && docsAsync.value == null;
 
     final recentItems = recentDocs.take(5).map((d) {
       final vendor = d['vendor_name'] as String? ?? 'Unknown';
@@ -94,6 +95,15 @@ class DashboardScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (docsStillLoading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: LinearProgressIndicator(
+                minHeight: 3,
+                color: BillyTheme.emerald600,
+                backgroundColor: BillyTheme.gray100,
+              ),
+            ),
           SpendHero(
             weekSpend: weekSpend,
             currencyCode: currency,

@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Billy uses the camera to scan receipts and invoices.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Billy needs photo library access to attach receipt images.</string>
 </dict>
 </plist>

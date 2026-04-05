@@ -1,6 +1,7 @@
 import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/formatting/app_currency.dart';
 import '../models/export_document.dart';
 
 /// Generates CSV for Billy export
@@ -8,13 +9,14 @@ class CsvGenerator {
   CsvGenerator();
 
   final _dateFormat = DateFormat('yyyy-MM-dd');
-  final _currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
 
   String generate({
     required List<ExportDocument> documents,
     required DateTime startDate,
     required DateTime endDate,
+    String? currencyCode,
   }) {
+    final currencyFormat = AppCurrency.formatter(currencyCode);
     final rows = <List<dynamic>>[
       ['Vendor', 'Date', 'Category', 'Type', 'Amount'],
       ...documents.map((d) => [
@@ -22,7 +24,7 @@ class CsvGenerator {
             _dateFormat.format(d.date),
             d.category,
             d.type,
-            _currencyFormat.format(d.amount),
+            currencyFormat.format(d.amount),
           ]),
     ];
 

@@ -1,6 +1,11 @@
 /**
  * CORS for Edge Functions: strict browser origins + permissive non-browser (no Origin).
- * Set ALLOWED_ORIGINS (comma-separated) in Supabase Function secrets for extra domains.
+ *
+ * Operator checklist (see docs/PRODUCTION_READINESS.md A6):
+ * - In Supabase Dashboard → Edge Functions → Secrets: set ALLOWED_ORIGINS to a comma-separated
+ *   list of any extra origins (production + staging custom domains) beyond DEFAULT_ALLOWLIST.
+ * - Preview URLs: *.vercel.app patterns are allowed via vercelPreviewOrigin().
+ * - After changing secrets, redeploy process-invoice and analytics-insights.
  */
 
 const DEFAULT_ALLOWLIST = [

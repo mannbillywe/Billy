@@ -1,0 +1,6 @@
+-- Reference only (do not run as a migration unless policies are missing).
+-- Bucket: invoice-files — used by Flutter (invoice_ocr_pipeline) and signed URLs in SupabaseService.
+-- Ensure in Dashboard → Storage → Policies:
+--   - Authenticated users can upload/read only objects under paths tied to their user_id / invoice RLS,
+--     or use a pattern consistent with your Edge Function uploads.
+-- See docs/PRODUCTION_READINESS.md A8 for audit steps.

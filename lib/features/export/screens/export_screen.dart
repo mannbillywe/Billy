@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/billy_theme.dart';
+import '../../../providers/profile_provider.dart';
 import '../../../services/supabase_service.dart';
 import '../models/export_document.dart';
 import '../services/csv_generator.dart';
@@ -46,6 +47,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     });
 
     try {
+      final currencyCode = ref.read(profileProvider).valueOrNull?['preferred_currency'] as String?;
       final docs = _filteredDocs;
       if (docs.isEmpty) {
         setState(() {
@@ -61,6 +63,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           documents: docs,
           startDate: _startDate,
           endDate: _endDate,
+          currencyCode: currencyCode,
         );
 
         if (mounted) {
@@ -72,6 +75,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           documents: docs,
           startDate: _startDate,
           endDate: _endDate,
+          currencyCode: currencyCode,
         );
 
         final filename = 'billy-export-${DateFormat('yyyy-MM-dd').format(DateTime.now())}.csv';

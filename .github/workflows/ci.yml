@@ -1,3 +1,4 @@
+# Billy CI — see docs/PRODUCTION_READINESS.md D3 / E5. Release builds use dart-define files locally / on Vercel, not here.
 name: CI
 
 on:

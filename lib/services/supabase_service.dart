@@ -24,6 +24,24 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Paged fetch for large histories ([offset] is 0-based row index in sort order).
+  static Future<List<Map<String, dynamic>>> fetchDocumentsPaged({
+    required int limit,
+    required int offset,
+  }) async {
+    if (_uid == null) return [];
+    if (limit <= 0) return [];
+    final from = offset;
+    final to = offset + limit - 1;
+    final res = await _client
+        .from('documents')
+        .select()
+        .eq('user_id', _uid!)
+        .order('date', ascending: false)
+        .range(from, to);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   static Future<void> insertDocument({
     required String vendorName,
     required double amount,

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../../core/formatting/app_currency.dart';
 import '../models/export_document.dart';
 
 /// Generates PDF reports for Billy export
@@ -11,13 +12,14 @@ class PdfGenerator {
   PdfGenerator();
 
   final _dateFormat = DateFormat('dd MMM yyyy');
-  final _currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
 
   Future<Uint8List> generateReport({
     required List<ExportDocument> documents,
     required DateTime startDate,
     required DateTime endDate,
+    String? currencyCode,
   }) async {
+    final currencyFormat = AppCurrency.formatter(currencyCode);
     final pdf = pw.Document();
     final total = documents.fold<double>(0, (sum, d) => sum + d.amount);
 
@@ -57,7 +59,7 @@ class PdfGenerator {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text('Total Expenses', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-                pw.Text(_currencyFormat.format(total), style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                pw.Text(currencyFormat.format(total), style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
               ],
             ),
           ),
@@ -99,7 +101,7 @@ class PdfGenerator {
           pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(d.vendorName)),
           pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(_dateFormat.format(d.date))),
           pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(d.category)),
-          pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(_currencyFormat.format(d.amount))),
+          pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(currencyFormat.format(d.amount))),
         ],
       )),
     ],
