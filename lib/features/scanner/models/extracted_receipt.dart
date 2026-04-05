@@ -160,13 +160,15 @@ class ExtractedReceipt {
       var q = qtyNum.round();
       if (q < 1) q = 1;
       if (q > 999999) q = 999999;
+      var lineCat = row['category'] as String?;
+      if (lineCat == null || lineCat.trim().isEmpty) lineCat = 'Uncategorized';
       return LineItem(
         description: row['description'] as String? ?? '',
         quantity: q,
         unitPrice: (row['unit_price'] as num?)?.toDouble(),
         total: (row['amount'] as num?)?.toDouble() ?? 0,
         hsnCode: row['item_code'] as String?,
-        category: row['category'] as String?,
+        category: lineCat,
         taxPercent: (row['tax_percent'] as num?)?.toDouble(),
         taxAmount: (row['tax_amount'] as num?)?.toDouble(),
       );
@@ -193,6 +195,27 @@ class ExtractedReceipt {
     }
 
     final vendor = (inv['vendor_name'] as String?)?.trim();
+    final expenseCat = (inv['expense_category'] as String?)?.trim();
+    String? headerCategory = expenseCat != null && expenseCat.isNotEmpty ? expenseCat : null;
+    if (headerCategory == null && lineItems.isNotEmpty) {
+      final weights = <String, double>{};
+      for (final li in lineItems) {
+        final c = li.category ?? '';
+        if (c.isEmpty || c == 'Uncategorized') continue;
+        weights[c] = (weights[c] ?? 0) + li.total;
+      }
+      if (weights.isNotEmpty) {
+        MapEntry<String, double>? best;
+        for (final e in weights.entries) {
+          if (best == null || e.value > best.value) best = e;
+        }
+        headerCategory = best?.key;
+      }
+    }
+    if (headerCategory == null && lineItems.isNotEmpty) {
+      headerCategory = lineItems.first.category ?? 'Uncategorized';
+    }
+
     return ExtractedReceipt(
       vendorName: (vendor != null && vendor.isNotEmpty) ? vendor : 'Unknown',
       date: dateStr,
@@ -202,7 +225,7 @@ class ExtractedReceipt {
       tax: combinedTax,
       total: (inv['total'] as num?)?.toDouble() ?? 0,
       currency: inv['currency'] as String? ?? 'INR',
-      category: null,
+      category: headerCategory,
       paymentMethod: null,
       vendorGstin: inv['vendor_gstin'] as String?,
       cgst: cgst,

@@ -193,6 +193,38 @@ class SupabaseService {
     return null;
   }
 
+  /// Tries each AI label in order (exact name), then substring match against user + default categories.
+  static Future<String?> resolveBestCategoryIdFromHints(Iterable<String?> hints) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    final ordered = hints
+        .map((e) => e?.trim())
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (ordered.isEmpty) return null;
+    for (final h in ordered) {
+      final id = await resolveCategoryIdByName(h);
+      if (id != null) return id;
+    }
+    final res = await _client
+        .from('categories')
+        .select('id,name,user_id')
+        .or('user_id.is.null,user_id.eq.$uid');
+    final list = List<Map<String, dynamic>>.from(res as List);
+    for (final h in ordered) {
+      final hl = h.toLowerCase();
+      for (final row in list) {
+        final nm = (row['name'] as String?)?.toLowerCase() ?? '';
+        if (nm.isEmpty) continue;
+        if (hl.contains(nm) || nm.contains(hl)) {
+          return row['id'] as String?;
+        }
+      }
+    }
+    return null;
+  }
+
   /// After OCR re-runs on linked invoice, refresh the `documents` row from `invoices` + `invoice_items`.
   static Future<void> syncDocumentFromLinkedInvoice(String documentId) async {
     final uid = _uid;
@@ -242,7 +274,11 @@ class SupabaseService {
       if (li.category != null && li.category!.trim().isNotEmpty) descParts.add(li.category!);
     }
 
-    final catId = descParts.isNotEmpty ? await resolveCategoryIdByName(descParts.first) : null;
+    final hintList = <String?>[
+      receipt.category,
+      ...receipt.lineItems.map((li) => li.category),
+    ];
+    final catId = await resolveBestCategoryIdFromHints(hintList);
 
     await updateDocument(
       id: documentId,

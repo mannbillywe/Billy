@@ -21,6 +21,7 @@ class ScanReviewPanel extends ConsumerStatefulWidget {
     super.key,
     required this.initialReceipt,
     this.invoiceId,
+    this.batchLabel,
     required this.onDiscard,
     required this.onDone,
   });
@@ -28,6 +29,8 @@ class ScanReviewPanel extends ConsumerStatefulWidget {
   final ExtractedReceipt initialReceipt;
   /// When set, header + line items are written back to `invoices` / `invoice_items`.
   final String? invoiceId;
+  /// e.g. "2 of 5" when scanning multiple files in one session.
+  final String? batchLabel;
   final VoidCallback onDiscard;
   /// After successful save (e.g. pop route + snackbar handled by parent).
   final VoidCallback onDone;
@@ -229,8 +232,12 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         if (_lineOn[i] && draft.lineItems[i].category != null) descParts.add(draft.lineItems[i].category!);
       }
 
-      final categoryId =
-          descParts.isNotEmpty ? await SupabaseService.resolveCategoryIdByName(descParts.first) : null;
+      final categoryHints = <String?>[
+        draft.category,
+        for (var i = 0; i < draft.lineItems.length; i++)
+          if (i < _lineOn.length && _lineOn[i]) draft.lineItems[i].category,
+      ];
+      final categoryId = await SupabaseService.resolveBestCategoryIdFromHints(categoryHints);
 
       final extractedPayload = _extractedPayload(draft, alloc);
 
@@ -270,6 +277,8 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             'total': draft.total,
             'currency': draft.currency,
             'payment_status': draft.paymentStatus,
+            if (draft.category != null && draft.category!.trim().isNotEmpty)
+              'expense_category': draft.category!.trim(),
           },
           itemRows: itemRows,
         );
@@ -370,8 +379,12 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         }
       }
 
-      final categoryId =
-          descParts.isNotEmpty ? await SupabaseService.resolveCategoryIdByName(descParts.first) : null;
+      final categoryHints = <String?>[
+        draft.category,
+        for (var i = 0; i < draft.lineItems.length; i++)
+          if (i < _lineOn.length && _lineOn[i]) draft.lineItems[i].category,
+      ];
+      final categoryId = await SupabaseService.resolveBestCategoryIdFromHints(categoryHints);
 
       final extractedPayload = _extractedPayload(draft, alloc)..['scan_draft'] = true;
       final docDate = draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10);
@@ -528,6 +541,27 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         ),
         const SizedBox(height: 8),
         Text('One extraction per photo — edit fields, choose lines, then save.', style: TextStyle(color: BillyTheme.zinc400)),
+        if (widget.batchLabel != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: BillyTheme.emerald50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: BillyTheme.emerald100),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.layers_outlined, size: 20, color: BillyTheme.emerald700),
+                const SizedBox(width: 8),
+                Text(
+                  'Multi-scan ${widget.batchLabel!}',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: BillyTheme.emerald700, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 20),
         TextField(
           controller: _vendorCtrl,
@@ -549,7 +583,10 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         const SizedBox(height: 10),
         TextField(
           controller: _catCtrl,
-          decoration: const InputDecoration(labelText: 'Category (invoice)', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Category (AI — edit if needed)',
+            border: OutlineInputBorder(),
+          ),
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 10),

@@ -26,6 +26,19 @@ class ScanScreen extends ConsumerStatefulWidget {
   ConsumerState<ScanScreen> createState() => _ScanScreenState();
 }
 
+class _BatchPick {
+  const _BatchPick({
+    required this.bytes,
+    required this.fileName,
+    required this.mime,
+    required this.source,
+  });
+  final Uint8List bytes;
+  final String fileName;
+  final String mime;
+  final String source;
+}
+
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   ScanState _state = ScanState.idle;
   ExtractedReceipt? _extracted;
@@ -36,6 +49,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   String? _previewFileName;
   String? _previewMime;
   String? _previewSource;
+
+  /// When non-null, [onSaveDone] advances to the next scan or closes.
+  List<_BatchPick>? _batchQueue;
+  int _batchIndex = 0;
+  static const int _maxBatch = 12;
 
   /// Bytes used when background prefetch started (compare on Continue).
   Uint8List? _prefetchSeedBytes;
@@ -122,8 +140,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     required String fileName,
     required String mime,
     required String source,
+    bool partOfBatch = false,
   }) async {
     if (_extractInFlight) return;
+    if (!partOfBatch) {
+      _batchQueue = null;
+      _batchIndex = 0;
+    }
     _extractInFlight = true;
     setState(() {
       _state = ScanState.processing;
@@ -277,9 +300,64 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     _prefetchedReceipt = null;
   }
 
+  Future<void> _startBatch(List<_BatchPick> items) async {
+    if (items.isEmpty || _extractInFlight) return;
+    if (items.length > _maxBatch) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Choose at most $_maxBatch files at once.')),
+      );
+      return;
+    }
+    _batchQueue = items;
+    _batchIndex = 0;
+    final first = items.first;
+    await _runPipelineDirect(
+      bytes: first.bytes,
+      fileName: first.fileName,
+      mime: first.mime,
+      source: first.source,
+      partOfBatch: true,
+    );
+  }
+
+  Future<void> _pickMultipleFromGallery() async {
+    if (_extractInFlight) return;
+    if (kIsWeb) {
+      await _pickFiles(allowMultiple: true);
+      return;
+    }
+    final picker = ImagePicker();
+    final files = await picker.pickMultiImage(
+      maxWidth: 1920,
+      imageQuality: 85,
+    );
+    if (files.isEmpty) return;
+    if (files.length > _maxBatch) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Choose at most $_maxBatch photos at once.')),
+      );
+      return;
+    }
+    final items = <_BatchPick>[];
+    for (final f in files) {
+      final b = await f.readAsBytes();
+      items.add(_BatchPick(
+        bytes: Uint8List.fromList(b),
+        fileName: f.name,
+        mime: _mimeTypeForPath(f.name),
+        source: 'gallery',
+      ));
+    }
+    await _startBatch(items);
+  }
+
   /// Camera / gallery — image only (compressed).
   Future<void> _pickAndExtract(ImageSource source) async {
     if (_extractInFlight) return;
+    _batchQueue = null;
+    _batchIndex = 0;
     final picker = ImagePicker();
     final XFile? file = await picker.pickImage(
       source: source,
@@ -308,24 +386,54 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   Future<void> _pickFromGallery() => _pickAndExtract(ImageSource.gallery);
   Future<void> _openCamera() => _pickAndExtract(ImageSource.camera);
 
-  /// PDF / image file (desktop & mobile).
-  Future<void> _pickFile() async {
+  /// PDF / image file (desktop & mobile). [allowMultiple] queues several scans in one go.
+  Future<void> _pickFiles({bool allowMultiple = false}) async {
     if (_extractInFlight) return;
+    if (!allowMultiple) {
+      _batchQueue = null;
+      _batchIndex = 0;
+    }
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
       withData: true,
+      allowMultiple: allowMultiple,
     );
     if (res == null || res.files.isEmpty) return;
-    final f = res.files.first;
-    final bytes = f.bytes;
-    if (bytes == null || bytes.isEmpty) {
+    final raw = res.files.where((f) => f.bytes != null && f.bytes!.isNotEmpty).toList();
+    if (raw.isEmpty) {
       setState(() {
         _state = ScanState.error;
         _errorMessage = 'Could not read file bytes';
       });
       return;
     }
+    if (allowMultiple) {
+      if (raw.length > _maxBatch) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Choose at most $_maxBatch files at once.')),
+        );
+        return;
+      }
+      final items = <_BatchPick>[];
+      for (final f in raw) {
+        final bytes = f.bytes!;
+        final name = f.name;
+        final mime = _mimeTypeForPath(name);
+        items.add(_BatchPick(
+          bytes: Uint8List.fromList(bytes),
+          fileName: name,
+          mime: mime,
+          source: 'file',
+        ));
+      }
+      await _startBatch(items);
+      return;
+    }
+
+    final f = raw.first;
+    final bytes = f.bytes!;
     final name = f.name;
     final mime = _mimeTypeForPath(name);
     if (mime == 'application/pdf') {
@@ -350,6 +458,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 
   Future<void> _performDiscard() async {
+    _batchQueue = null;
+    _batchIndex = 0;
     _prefetchCancelled = true;
     try {
       await _prefetchJob;
@@ -385,6 +495,22 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 
   void _onSaveDone() {
+    final q = _batchQueue;
+    if (q != null && _batchIndex < q.length - 1) {
+      final next = _batchIndex + 1;
+      final item = q[next];
+      _batchIndex = next;
+      unawaited(_runPipelineDirect(
+        bytes: item.bytes,
+        fileName: item.fileName,
+        mime: item.mime,
+        source: item.source,
+        partOfBatch: true,
+      ));
+      return;
+    }
+    _batchQueue = null;
+    _batchIndex = 0;
     if (mounted) Navigator.of(context).maybePop();
   }
 
@@ -420,7 +546,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   key: const ValueKey('idle'),
                   onCamera: _extractInFlight ? () {} : _openCamera,
                   onPhotoLibrary: _extractInFlight ? () {} : _pickFromGallery,
-                  onUploadPdf: _extractInFlight ? () {} : _pickFile,
+                  onUploadPdf: _extractInFlight ? () {} : () => _pickFiles(allowMultiple: false),
+                  onPickMultiple: _extractInFlight ? () {} : _pickMultipleFromGallery,
+                  onUploadMultiple: _extractInFlight ? () {} : () => _pickFiles(allowMultiple: true),
                 ),
               ScanState.previewAdjust => ScanAdjustPreview(
                   key: const ValueKey('preview'),
@@ -435,9 +563,12 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 ),
               ScanState.processing => const ScanProcessing(key: ValueKey('processing')),
               ScanState.success => ScanReviewPanel(
-                  key: const ValueKey('review'),
+                  key: ValueKey('review_${_invoiceId ?? _batchIndex}'),
                   initialReceipt: _extracted!,
                   invoiceId: _invoiceId,
+                  batchLabel: _batchQueue != null && _batchQueue!.length > 1
+                      ? '${_batchIndex + 1} of ${_batchQueue!.length}'
+                      : null,
                   onDiscard: _discard,
                   onDone: _onSaveDone,
                 ),

@@ -16,6 +16,25 @@ const GEMINI_MODEL = "gemini-2.5-flash-lite";
 
 type Json = Record<string, unknown>;
 
+const EXPENSE_TAXONOMY = [
+  "Food & Dining",
+  "Groceries",
+  "Transport & Fuel",
+  "Shopping & Retail",
+  "Entertainment",
+  "Healthcare & Pharmacy",
+  "Utilities & Bills",
+  "Travel & Lodging",
+  "Office & Supplies",
+  "Professional Services",
+  "Subscriptions & Digital",
+  "Education",
+  "Personal Care",
+  "Gifts & Donations",
+  "Fees & Bank Charges",
+  "Uncategorized",
+].join(", ");
+
 const EXTRACTION_PROMPT = `You are an expert invoice, bill, and café/restaurant receipt extractor. Analyze this image or PDF (may be crumpled or angled).
 
 Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
@@ -38,7 +57,7 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
       "buyer_address": "",
       "buyer_gstin": "",
       "line_items": [
-        {"description": "", "quantity": 1, "unit_price": 0, "amount": 0, "hsn_code": "", "category": "Food & Beverage"}
+        {"description": "", "quantity": 1, "unit_price": 0, "amount": 0, "hsn_code": "", "category": "Food & Dining"}
       ],
       "subtotal": 0,
       "service_charge": 0,
@@ -52,7 +71,8 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
       "tip": 0,
       "total_amount": 0,
       "currency": "INR",
-      "category": "",
+      "expense_category": "Food & Dining",
+      "document_kind": "simplified_receipt",
       "payment_method": "",
       "payment_status": "",
       "fssai_license": "",
@@ -62,6 +82,16 @@ Extract ALL data found. Return ONLY valid JSON (no markdown, no code blocks):
   "total_invoices_found": 1,
   "extraction_confidence": "high"
 }
+
+Expense classification (required):
+- expense_category: ONE label for the whole document, chosen ONLY from this list (pick closest match): ${EXPENSE_TAXONOMY}
+- Every line_items[].category: REQUIRED — same taxonomy as above; classify each line from its description (e.g. medicine → Healthcare & Pharmacy, petrol → Transport & Fuel).
+- If unsure for a line, use the same as expense_category or "Uncategorized".
+
+document_kind (shape of paper, NOT expense type): one of "tax_invoice", "simplified_receipt", "bill", "other".
+- tax_invoice: formal GST invoice with buyer/seller details.
+- simplified_receipt: retail/café thermal slip.
+- bill: utility or service bill.
 
 Rules:
 - Indian receipts: when CGST and SGST are printed as separate amounts, fill cgst and sgst (not only gst). For inter-state with IGST, use igst.
@@ -113,7 +143,9 @@ interface NormalizedInvoice {
   payment_status: string | null;
   raw_text: string | null;
   confidence: number | null;
+  /** receipt | invoice | bill — layout / document shape, not expense type */
   document_type: string | null;
+  expense_category: string | null;
   line_items: NormalizedLine[];
 }
 
@@ -138,6 +170,47 @@ function parseDateIso(s: string | null | undefined): string | null {
   return t.split("T")[0] ?? null;
 }
 
+function mapDocumentKindToDb(inv: Record<string, unknown>): string {
+  const dk = (str(inv.document_kind) ?? "").toLowerCase().replace(/-/g, "_");
+  if (dk === "tax_invoice") return "invoice";
+  if (dk === "bill") return "bill";
+  if (dk === "simplified_receipt" || dk === "other") return "receipt";
+  const gstin = str(inv.vendor_gstin);
+  const invNo = str(inv.invoice_number) ?? str(inv.bill_number);
+  if (gstin && invNo) return "invoice";
+  return "receipt";
+}
+
+function resolveExpenseCategory(
+  inv: Record<string, unknown>,
+  line_items: NormalizedLine[],
+): string | null {
+  let ec = str(inv.expense_category);
+  if (!ec) {
+    const legacy = str(inv.category);
+    if (legacy && !/^(receipt|invoice|bill|tax_invoice|simplified_receipt)$/i.test(legacy)) {
+      ec = legacy;
+    }
+  }
+  if (ec) return ec;
+  const weights = new Map<string, number>();
+  for (const li of line_items) {
+    const c = li.category;
+    if (!c) continue;
+    const a = li.amount ?? 0;
+    weights.set(c, (weights.get(c) ?? 0) + a);
+  }
+  let best: string | null = null;
+  let bestW = 0;
+  for (const [k, w] of weights) {
+    if (w > bestW) {
+      bestW = w;
+      best = k;
+    }
+  }
+  return best;
+}
+
 function normalizeFromGeminiJson(
   parsed: Record<string, unknown>,
   rawSnippet: string,
@@ -157,6 +230,8 @@ function normalizeFromGeminiJson(
       const qty = num(o.quantity) ?? 1;
       const unit = num(o.unit_price);
       const amt = num(o.amount) ?? num(o.total) ?? null;
+      let cat = str(o.category);
+      if (!cat || cat.length === 0) cat = "Uncategorized";
       line_items.push({
         description: str(o.description),
         quantity: qty,
@@ -165,7 +240,7 @@ function normalizeFromGeminiJson(
         tax_percent: num(o.tax_percent),
         tax_amount: num(o.tax_amount),
         item_code: str(o.hsn_code) ?? str(o.item_code),
-        category: str(o.category),
+        category: cat,
       });
     }
   }
@@ -214,6 +289,9 @@ function normalizeFromGeminiJson(
   const meta = metaBits.length > 0 ? `[${metaBits.join(" | ")}]\n` : "";
   const body = rawSnippet.length > 12000 ? rawSnippet.slice(0, 12000) : rawSnippet;
 
+  const expense_category = resolveExpenseCategory(inv, line_items);
+  const document_type = mapDocumentKindToDb(inv);
+
   return {
     vendor_name: str(inv.vendor_name),
     vendor_gstin: str(inv.vendor_gstin),
@@ -232,7 +310,8 @@ function normalizeFromGeminiJson(
     payment_status: str(inv.payment_status),
     raw_text: meta + body,
     confidence,
-    document_type: str(inv.category) ?? "receipt",
+    document_type,
+    expense_category,
     line_items,
   };
 }
@@ -455,6 +534,7 @@ async function runOcrPipelineBackground(args: {
       raw_text: norm.raw_text,
       confidence: norm.confidence,
       document_type: norm.document_type,
+      expense_category: norm.expense_category,
       review_required: true,
       processing_error: null,
     };
