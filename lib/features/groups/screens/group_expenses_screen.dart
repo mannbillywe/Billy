@@ -10,25 +10,6 @@ import '../../../providers/group_settlements_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../services/supabase_service.dart';
 
-/// Equal split with 2-decimal rounding; remainder goes to the last member.
-List<Map<String, dynamic>> _equalShares(List<String> userIds, double total) {
-  if (userIds.isEmpty) return [];
-  final n = userIds.length;
-  double round2(double x) => (x * 100).round() / 100;
-  final each = round2(total / n);
-  final out = <Map<String, dynamic>>[];
-  var allocated = 0.0;
-  for (var i = 0; i < n; i++) {
-    if (i == n - 1) {
-      out.add({'user_id': userIds[i], 'share_amount': round2(total - allocated)});
-    } else {
-      out.add({'user_id': userIds[i], 'share_amount': each});
-      allocated += each;
-    }
-  }
-  return out;
-}
-
 class GroupExpensesScreen extends ConsumerWidget {
   const GroupExpensesScreen({
     super.key,
@@ -263,7 +244,7 @@ class GroupExpensesScreen extends ConsumerWidget {
                     final splitIds = chosen.toList()..sort();
                     if (amount == null || amount <= 0 || splitIds.isEmpty) return;
                     if (!splitIds.contains(paidBy)) return;
-                    final shares = _equalShares(splitIds, amount);
+                    final shares = equalSharesForUsers(splitIds, amount);
                     Navigator.pop(ctx);
                     try {
                       await SupabaseService.createGroupExpense(

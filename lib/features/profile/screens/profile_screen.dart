@@ -100,7 +100,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             label: 'Notifications',
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Notifications — coming soon')),
+                const SnackBar(
+                  content: Text(
+                    'In-app notification settings are not available yet. Use your device Settings to control alerts for Billy.',
+                  ),
+                ),
               );
             },
           ),
@@ -109,11 +113,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           }),
           _SettingsTile(
             label: 'Privacy Policy',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Privacy policy — coming soon')),
-              );
-            },
+            onTap: () => _showPrivacyPolicy(context),
           ),
           const SizedBox(height: 24),
           GestureDetector(
@@ -136,6 +136,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
         ],
       ),
+      ),
+    );
+  }
+
+  void _showPrivacyPolicy(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Privacy'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Billy stores your account and receipt data in the database for your project (for example Supabase), under that provider’s terms and your configuration. '
+            'Sign-in and third-party APIs are only used as you set up in the app. You can export your documents from Export Data. '
+            'For questions about your data, contact whoever operates this Billy deployment.',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+        ],
       ),
     );
   }

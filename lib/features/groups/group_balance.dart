@@ -51,3 +51,22 @@ Map<String, double> netForMembers(Map<String, double> net, Iterable<String> memb
   }
   return out;
 }
+
+/// Equal split with 2-decimal rounding; remainder goes to the last member so shares sum to [total].
+List<Map<String, dynamic>> equalSharesForUsers(List<String> userIds, double total) {
+  if (userIds.isEmpty) return [];
+  double round2(double x) => (x * 100).round() / 100;
+  final n = userIds.length;
+  final each = round2(total / n);
+  final out = <Map<String, dynamic>>[];
+  var allocated = 0.0;
+  for (var i = 0; i < n; i++) {
+    if (i == n - 1) {
+      out.add({'user_id': userIds[i], 'share_amount': round2(total - allocated)});
+    } else {
+      out.add({'user_id': userIds[i], 'share_amount': each});
+      allocated += each;
+    }
+  }
+  return out;
+}
