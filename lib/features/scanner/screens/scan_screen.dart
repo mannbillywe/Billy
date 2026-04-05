@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/logging/billy_logger.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../../../providers/usage_limits_provider.dart';
+import '../../../services/supabase_service.dart';
 import '../../invoices/services/invoice_ocr_pipeline.dart';
 import '../models/extracted_receipt.dart';
 import '../utils/scan_raster_adjust.dart';
@@ -60,6 +62,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _previewSource = null;
     });
     try {
+      await SupabaseService.incrementOcrScan();
+      ref.invalidate(usageLimitsProvider);
+
       final result = await InvoiceOcrPipeline.uploadAndProcess(
         bytes: Uint8List.fromList(bytes),
         fileName: fileName,

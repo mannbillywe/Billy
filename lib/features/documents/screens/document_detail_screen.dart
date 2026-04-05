@@ -8,6 +8,7 @@ import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/usage_limits_provider.dart';
 import '../../../services/supabase_service.dart';
 import '../../analytics/screens/document_ai_review_screen.dart';
 import '../../invoices/services/invoice_ocr_pipeline.dart';
@@ -139,12 +140,15 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
     setState(() => _busyOcr = true);
     try {
+      await SupabaseService.incrementOcrScan();
+      ref.invalidate(usageLimitsProvider);
+
       await InvoiceOcrPipeline.reprocessExistingInvoice(invoiceId: id, filePath: path);
       await ref.read(documentsProvider.notifier).syncDocumentFromLinkedInvoice(widget.documentId);
       if (mounted) await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
     } finally {
       if (mounted) setState(() => _busyOcr = false);
@@ -176,6 +180,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
     setState(() => _busyOcr = true);
     try {
+      await SupabaseService.incrementOcrScan();
+      ref.invalidate(usageLimitsProvider);
+
       await InvoiceOcrPipeline.replaceInvoiceFileAndReprocess(
         invoiceId: id,
         filePath: path,
@@ -186,7 +193,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       if (mounted) await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Replace failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
     } finally {
       if (mounted) setState(() => _busyOcr = false);

@@ -1,5 +1,5 @@
 // process-invoice: Storage → Gemini (one generateContent per file) → Postgres
-// API key (first match): profiles.gemini_api_key for JWT user, else Edge secret GEMINI_API_KEY
+// API key: shared app_api_keys table ('gemini'), else Edge secret GEMINI_API_KEY
 // Model: gemini-2.5-flash-lite — free-tier friendly + cost-efficient for invoice/receipt OCR
 
 import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
@@ -614,23 +614,24 @@ serve(async (req) => {
     });
   };
 
-  const { data: profile, error: profErr } = await supabase
-    .from("profiles")
-    .select("gemini_api_key")
-    .eq("id", user.id)
+  // Resolve Gemini key: shared app_api_keys table → env secret fallback
+  const serviceClient = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? supabaseAnon}` } },
+  });
+  const { data: sharedRow } = await serviceClient
+    .from("app_api_keys")
+    .select("api_key")
+    .eq("provider", "gemini")
+    .eq("is_active", true)
     .maybeSingle();
 
-  if (profErr) {
-    console.error("process-invoice: profile read", profErr.message);
-  }
-
-  const fromProfile = (profile?.gemini_api_key as string | null)?.trim() ?? "";
+  const fromShared = (sharedRow?.api_key as string | null)?.trim() ?? "";
   const fromSecret = Deno.env.get("GEMINI_API_KEY")?.trim() ?? "";
-  const geminiKey = fromProfile.length > 0 ? fromProfile : fromSecret;
+  const geminiKey = fromShared.length > 0 ? fromShared : fromSecret;
 
   if (!geminiKey) {
     const msg =
-      "No Gemini API key: set profiles.gemini_api_key for this user and/or GEMINI_API_KEY on the function.";
+      "No Gemini API key configured. Add a row to app_api_keys or set GEMINI_API_KEY on the function.";
     await logInsertSync("failed", msg, body, null, null);
     await supabase.from("invoices").update({ status: "failed", processing_error: msg }).eq(
       "id",
@@ -646,7 +647,7 @@ serve(async (req) => {
     );
   }
 
-  const keySource = fromProfile.length > 0 ? "profiles.gemini_api_key" : "GEMINI_API_KEY secret";
+  const keySource = fromShared.length > 0 ? "app_api_keys" : "GEMINI_API_KEY secret";
   const keyPrefix = geminiKey.slice(0, 8);
   console.log(
     `process-invoice: user=${user.id} key_source=${keySource} key_prefix=${keyPrefix}… model=${GEMINI_MODEL} (async)`,

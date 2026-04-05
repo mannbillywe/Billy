@@ -400,21 +400,6 @@ class SupabaseService {
   }
 
   // ─── Profile ─────────────────────────────────────────────────────
-  /// Scanning does not use this — the Edge Function reads `profiles.gemini_api_key` for the JWT user.
-  static Future<String?> getGeminiApiKey() async {
-    if (_uid == null) return null;
-    try {
-      final res = await _client
-          .from('profiles')
-          .select('gemini_api_key')
-          .eq('id', _uid!)
-          .maybeSingle();
-      final key = res?['gemini_api_key'] as String?;
-      return (key != null && key.trim().isNotEmpty) ? key.trim() : null;
-    } catch (_) {
-      return null;
-    }
-  }
 
   static Future<Map<String, dynamic>?> fetchProfile() async {
     if (_uid == null) return null;
@@ -433,14 +418,12 @@ class SupabaseService {
   static Future<void> updateProfile({
     String? displayName,
     String? avatarUrl,
-    String? geminiApiKey,
     String? preferredCurrency,
   }) async {
     if (_uid == null) return;
     final updates = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
     if (displayName != null) updates['display_name'] = displayName;
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
-    if (geminiApiKey != null) updates['gemini_api_key'] = geminiApiKey;
     if (preferredCurrency != null) updates['preferred_currency'] = preferredCurrency;
     await _client.from('profiles').update(updates).eq('id', _uid!);
   }
@@ -613,6 +596,59 @@ class SupabaseService {
         .eq('user_id', _uid!)
         .order('app_name');
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  // ─── Usage Limits ────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>?> fetchUsageLimits() async {
+    final uid = _uid;
+    if (uid == null) return null;
+    try {
+      final res = await _client.rpc('maybe_reset_usage', params: {'p_user_id': uid});
+      if (res is Map) return Map<String, dynamic>.from(res);
+      if (res is List && res.isNotEmpty) return Map<String, dynamic>.from(res.first as Map);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Increment OCR scan counter. Throws if limit reached.
+  static Future<Map<String, dynamic>> incrementOcrScan() async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    final res = await _client.rpc('increment_ocr_scan', params: {'p_user_id': uid});
+    if (res is Map) return Map<String, dynamic>.from(res);
+    if (res is List && res.isNotEmpty) return Map<String, dynamic>.from(res.first as Map);
+    throw StateError('Failed to increment OCR scan counter');
+  }
+
+  /// Increment refresh counter. Throws if limit reached.
+  static Future<Map<String, dynamic>> incrementRefreshCount() async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    final res = await _client.rpc('increment_refresh_count', params: {'p_user_id': uid});
+    if (res is Map) return Map<String, dynamic>.from(res);
+    if (res is List && res.isNotEmpty) return Map<String, dynamic>.from(res.first as Map);
+    throw StateError('Failed to increment refresh counter');
+  }
+
+  /// Check if OCR scans are available without incrementing.
+  static Future<bool> canPerformOcrScan() async {
+    final usage = await fetchUsageLimits();
+    if (usage == null) return true;
+    final used = (usage['ocr_scans_used'] as num?)?.toInt() ?? 0;
+    final limit = (usage['ocr_scans_limit'] as num?)?.toInt() ?? 5;
+    return used < limit;
+  }
+
+  /// Check if refreshes are available without incrementing.
+  static Future<bool> canPerformRefresh() async {
+    final usage = await fetchUsageLimits();
+    if (usage == null) return true;
+    final used = (usage['refresh_used'] as num?)?.toInt() ?? 0;
+    final limit = (usage['refresh_limit'] as num?)?.toInt() ?? 5;
+    return used < limit;
   }
 
   // ─── Dashboard aggregations ──────────────────────────────────────

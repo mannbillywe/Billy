@@ -1,5 +1,5 @@
 // analytics-insights: deterministic spend analytics + optional single Gemini call per manual refresh.
-// API key: profiles.gemini_api_key first, else GEMINI_API_KEY. User JWT required; all reads respect RLS.
+// API key: shared app_api_keys table ('gemini'), else GEMINI_API_KEY. User JWT required; all reads respect RLS.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
@@ -261,15 +261,26 @@ function rollup(
 
 async function resolveGeminiKey(
   supabase: ReturnType<typeof createClient>,
-  userId: string,
+  _userId: string,
 ): Promise<{ key: string; source: string } | null> {
-  const { data: profile } = await supabase.from("profiles").select("gemini_api_key").eq("id", userId)
+  // Use shared app_api_keys table, fall back to env secret
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceClient = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? supabaseAnon}` } },
+  });
+  const { data: sharedRow } = await serviceClient
+    .from("app_api_keys")
+    .select("api_key")
+    .eq("provider", "gemini")
+    .eq("is_active", true)
     .maybeSingle();
-  const fromProfile = (profile?.gemini_api_key as string | null)?.trim() ?? "";
+
+  const fromShared = (sharedRow?.api_key as string | null)?.trim() ?? "";
   const fromSecret = Deno.env.get("GEMINI_API_KEY")?.trim() ?? "";
-  const key = fromProfile.length > 0 ? fromProfile : fromSecret;
+  const key = fromShared.length > 0 ? fromShared : fromSecret;
   if (!key) return null;
-  const source = fromProfile.length > 0 ? "profiles.gemini_api_key" : "GEMINI_API_KEY";
+  const source = fromShared.length > 0 ? "app_api_keys" : "GEMINI_API_KEY";
   return { key, source };
 }
 
