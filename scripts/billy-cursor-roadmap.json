@@ -1,0 +1,90 @@
+{
+  "description": "Ordered Cursor prompts for Billy production readiness. Stops before store binary upload; use Vercel for web testing.",
+  "vercelNote": "Test the web build on your Vercel production URL (see Vercel dashboard or scripts/deploy-vercel.ps1).",
+  "steps": [
+    {
+      "id": "intro",
+      "title": "How to use this roadmap",
+      "humanAction": "Run: .\\scripts\\next-billy-step.ps1 (shows current step). After you finish work in Cursor, run: .\\scripts\\next-billy-step.ps1 -Complete",
+      "cursorPrompt": "Read docs/PRODUCTION_READINESS.md Table of Contents. Confirm repo path is billy_con. Do not start store uploads; web testing uses Vercel."
+    },
+    {
+      "id": "vercel-smoke",
+      "title": "Smoke test web on Vercel",
+      "humanAction": "Open your Vercel production URL. Sign in, open documents, open scan (or upload), confirm no console errors.",
+      "cursorPrompt": "As the Frontend Agent: Review docs/PRODUCTION_READINESS.md Part G3 (Web Vercel). List any web-only gaps (CORS, auth redirect, image picker) and fix critical breakages only; keep changes minimal."
+    },
+    {
+      "id": "supabase-secrets-cors",
+      "title": "Supabase dashboard: secrets and CORS",
+      "humanAction": "In Supabase: set Edge secrets (GEMINI_API_KEY, service role if used), set ALLOWED_ORIGINS to include your Vercel URL. Redeploy Edge Functions if needed.",
+      "cursorPrompt": "As the Backend Agent: Cross-check supabase/functions/_shared/cors.ts and process-invoice / analytics-insights against docs PRODUCTION_READINESS A6. Document exact env vars the operator must set in a short comment at top of _shared/cors.ts if anything is missing."
+    },
+    {
+      "id": "rls-remote-verify",
+      "title": "Verify RLS on remote database",
+      "humanAction": "In Supabase SQL editor, run the pg_policies audit query from docs/PRODUCTION_READINESS.md A2. Confirm migrations through 20260406120000 are applied.",
+      "cursorPrompt": "As the Backend Agent: Compare docs/PRODUCTION_READINESS.md A2 and A7 against supabase/migrations (especially production_security_rls and shared_api_keys). If code and doc disagree, update the doc section Current state in one place only."
+    },
+    {
+      "id": "usage-refresh-ui",
+      "title": "Verify refresh usage limits (re-OCR, analytics, document AI)",
+      "humanAction": "On Vercel or local: open a document with a linked invoice, use Re-run OCR once; open Analytics and Refresh insights; confirm refresh_used increments and buttons disable at the limit.",
+      "cursorPrompt": "As the Module Agent: Audit refresh limits end-to-end. Confirm increment_refresh_count is invoked for re-OCR/replace scan, analytics refresh, and document AI review; confirm OCR new scans still use increment_ocr_scan only on the scan flow. Fix any missed paths or misleading copy."
+    },
+    {
+      "id": "export-currency",
+      "title": "Export PDF/CSV currency correctness",
+      "humanAction": "Export a receipt and open CSV/PDF; confirm amounts and currency match the app.",
+      "cursorPrompt": "As the Frontend Agent: Follow docs/PRODUCTION_READINESS.md C6. Fix lib/features/export/services/pdf_generator.dart and csv_generator.dart to use profile preferred_currency and consistent formatting via AppCurrency where appropriate."
+    },
+    {
+      "id": "loading-empty-states",
+      "title": "Loading, error, and empty states",
+      "humanAction": "Navigate with slow network or empty account; screens should not spin forever or show blank.",
+      "cursorPrompt": "As the Frontend Agent: Per docs/PRODUCTION_READINESS.md F1, add or tighten loading/error/empty UI for documents_history_screen, dashboard_screen, and scan_screen. Reuse existing BillyTheme patterns."
+    },
+    {
+      "id": "ci-verify",
+      "title": "CI green locally",
+      "humanAction": "Run: flutter analyze; flutter test",
+      "cursorPrompt": "As the DevOps Agent: Ensure .github/workflows/ci.yml runs flutter analyze and flutter test. If useful, add a comment in the workflow linking to docs/PRODUCTION_READINESS.md D3. Do not add store signing secrets to CI."
+    },
+    {
+      "id": "documents-pagination",
+      "title": "Document list scalability",
+      "humanAction": "With many documents, scroll and confirm performance is acceptable.",
+      "cursorPrompt": "As the Frontend Agent: Per docs/PRODUCTION_READINESS.md B7, add pagination or incremental loading to the main documents list if it loads unbounded rows. Prefer existing Supabase patterns in supabase_service.dart."
+    },
+    {
+      "id": "storage-buckets",
+      "title": "Storage bucket policies",
+      "humanAction": "In Supabase Storage, confirm buckets used by Billy have user-scoped policies.",
+      "cursorPrompt": "As the Backend Agent: Per docs/PRODUCTION_READINESS.md A8, audit which buckets the app uses (grep storage.from). List required RLS-style policies in a brief note in supabase/migrations or as SQL comments if no migration is needed."
+    },
+    {
+      "id": "android-signing",
+      "title": "Android release signing ready",
+      "humanAction": "Create keystore from android/key.properties.example; keep keystore and key.properties out of git. Build: flutter build appbundle --dart-define-from-file=config/prod.json",
+      "cursorPrompt": "As the DevOps Agent: Verify android/app/build.gradle.kts release signing matches docs/PRODUCTION_READINESS.md G2. Fix only if broken; do not commit secrets."
+    },
+    {
+      "id": "ios-metadata",
+      "title": "iOS App Store metadata (no upload)",
+      "humanAction": "In App Store Connect, prepare app name, subtitle, privacy policy URL, screenshots placeholders. Do not submit for review until you choose.",
+      "cursorPrompt": "As the Frontend Agent: Per docs/PRODUCTION_READINESS.md G1, verify Info.plist usage strings (camera, photos, etc.) and any required URL schemes. Add or fix missing keys only."
+    },
+    {
+      "id": "play-metadata",
+      "title": "Play Store listing (no upload)",
+      "humanAction": "In Play Console, prepare store listing and Data safety form. Upload AAB only when ready.",
+      "cursorPrompt": "As the Module Agent: Per docs/PRODUCTION_READINESS.md G2, confirm Android manifest permissions match actual features. Document nothing extra."
+    },
+    {
+      "id": "pre-upload-stop",
+      "title": "STOP — manual store upload only",
+      "humanAction": "Upload to App Store Connect and/or Play Console using your Apple/Google accounts. Run flutter build ipa / appbundle with prod defines.",
+      "cursorPrompt": "No automation past this point. Optionally run a final flutter test and flutter analyze before uploading binaries."
+    }
+  ]
+}

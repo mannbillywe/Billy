@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/usage_limits_provider.dart';
 import '../../../services/supabase_service.dart';
 import '../../documents/models/document_list_models.dart';
 import '../../documents/utils/document_json.dart';
@@ -68,6 +69,9 @@ class _DocumentAiReviewScreenState extends ConsumerState<DocumentAiReviewScreen>
       _aiError = null;
     });
     try {
+      await SupabaseService.incrementRefreshCount();
+      ref.invalidate(usageLimitsProvider);
+
       final r = await AnalyticsInsightsService.reviewDocument(
         documentId: widget.documentId,
         includeAi: true,
@@ -79,7 +83,7 @@ class _DocumentAiReviewScreenState extends ConsumerState<DocumentAiReviewScreen>
       });
       if (r.geminiUsed != true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('AI review skipped — check your Gemini API key.')),
+          const SnackBar(content: Text('AI review skipped — check server AI configuration.')),
         );
       }
     } catch (e) {
@@ -95,6 +99,15 @@ class _DocumentAiReviewScreenState extends ConsumerState<DocumentAiReviewScreen>
   @override
   Widget build(BuildContext context) {
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String?;
+    final refreshLocked = ref.watch(usageLimitsProvider).maybeWhen(
+      data: (m) {
+        if (m == null) return false;
+        final used = (m['refresh_used'] as num?)?.toInt() ?? 0;
+        final limit = (m['refresh_limit'] as num?)?.toInt() ?? 5;
+        return used >= limit;
+      },
+      orElse: () => false,
+    );
 
     return Scaffold(
       backgroundColor: BillyTheme.scaffoldBg,
@@ -129,14 +142,21 @@ class _DocumentAiReviewScreenState extends ConsumerState<DocumentAiReviewScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Gemini runs only when you tap Run AI review.',
+                      'AI runs only when you tap Run AI review (uses one refresh from your monthly limit).',
                       style: TextStyle(fontSize: 13, color: BillyTheme.gray500, height: 1.35),
                     ),
+                    if (refreshLocked) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Monthly refresh limit reached. Try again in the next period.',
+                        style: TextStyle(fontSize: 12, color: BillyTheme.red500, height: 1.35),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     ..._factTiles(_doc!, currency),
                     const SizedBox(height: 24),
                     FilledButton.icon(
-                      onPressed: _loadingAi ? null : _runAiReview,
+                      onPressed: (refreshLocked || _loadingAi) ? null : _runAiReview,
                       icon: _loadingAi
                           ? const SizedBox(
                               width: 20,

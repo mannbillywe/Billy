@@ -30,6 +30,9 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 
+# Billy Cursor roadmap progress (local only)
+scripts/.billy-cursor-step
+
 # IDE
 .cursor/
 .vscode/

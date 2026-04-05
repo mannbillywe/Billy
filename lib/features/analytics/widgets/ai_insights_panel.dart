@@ -7,6 +7,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../core/utils/analytics_fingerprint.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/usage_limits_provider.dart';
 import '../../documents/screens/documents_history_screen.dart';
 import '../models/analytics_insights_models.dart';
 import '../providers/analytics_insights_provider.dart';
@@ -76,6 +77,15 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
   Widget build(BuildContext context) {
     final async = ref.watch(analyticsInsightsProvider);
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String?;
+    final refreshLocked = ref.watch(usageLimitsProvider).maybeWhen(
+      data: (m) {
+        if (m == null) return false;
+        final used = (m['refresh_used'] as num?)?.toInt() ?? 0;
+        final limit = (m['refresh_limit'] as num?)?.toInt() ?? 5;
+        return used >= limit;
+      },
+      orElse: () => false,
+    );
     final result = async.valueOrNull;
     final docs = ref.watch(documentsProvider).valueOrNull ?? [];
     final liveFp = analyticsDataFingerprintForPreset(docs, widget.rangePreset);
@@ -104,7 +114,7 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Insights are not regenerated automatically. Tap Refresh when you want updated numbers and a short AI summary (uses your Gemini key if set).',
+                'Insights are not regenerated automatically. Tap Refresh when you want updated numbers and a short AI summary (counts toward your monthly refresh limit).',
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray600, height: 1.35),
               ),
             ],
@@ -144,7 +154,7 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
               ),
             ),
             FilledButton.icon(
-              onPressed: _refreshBusy ? null : _onRefreshInsights,
+              onPressed: (_refreshBusy || refreshLocked) ? null : _onRefreshInsights,
               icon: _refreshBusy
                   ? const SizedBox(
                       width: 18,
@@ -160,6 +170,13 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
             ),
           ],
         ),
+        if (refreshLocked) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Monthly refresh limit reached.',
+            style: TextStyle(fontSize: 12, color: BillyTheme.red500, height: 1.35),
+          ),
+        ],
         if (async.isLoading && result == null)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 32),

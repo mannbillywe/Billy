@@ -140,7 +140,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
     setState(() => _busyOcr = true);
     try {
-      await SupabaseService.incrementOcrScan();
+      await SupabaseService.incrementRefreshCount();
       ref.invalidate(usageLimitsProvider);
 
       await InvoiceOcrPipeline.reprocessExistingInvoice(invoiceId: id, filePath: path);
@@ -180,7 +180,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
     setState(() => _busyOcr = true);
     try {
-      await SupabaseService.incrementOcrScan();
+      await SupabaseService.incrementRefreshCount();
       ref.invalidate(usageLimitsProvider);
 
       await InvoiceOcrPipeline.replaceInvoiceFileAndReprocess(
@@ -314,6 +314,17 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         repairPath.isNotEmpty &&
         repairId != null &&
         repairId.isNotEmpty;
+
+    final usageAsync = ref.watch(usageLimitsProvider);
+    final refreshLocked = usageAsync.maybeWhen(
+      data: (m) {
+        if (m == null) return false;
+        final used = (m['refresh_used'] as num?)?.toInt() ?? 0;
+        final limit = (m['refresh_limit'] as num?)?.toInt() ?? 5;
+        return used >= limit;
+      },
+      orElse: () => false,
+    );
 
     return RefreshIndicator(
       color: BillyTheme.emerald600,
@@ -477,9 +488,16 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
               'Re-run OCR on the stored file, or upload a clearer scan to replace it. Line selections and split intents are preserved when possible.',
               style: TextStyle(fontSize: 13, color: BillyTheme.gray500, height: 1.35),
             ),
+            if (refreshLocked) ...[
+              const SizedBox(height: 8),
+              Text(
+                'You have reached your monthly limit for re-runs and replacements. Limits reset each billing period.',
+                style: TextStyle(fontSize: 12, color: BillyTheme.red500, height: 1.35),
+              ),
+            ],
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
-              onPressed: _busyOcr ? null : _rerunOcr,
+              onPressed: (refreshLocked || _busyOcr) ? null : _rerunOcr,
               icon: _busyOcr
                   ? const SizedBox(
                       width: 20,
@@ -491,7 +509,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: _busyOcr ? null : _replaceScan,
+              onPressed: (refreshLocked || _busyOcr) ? null : _replaceScan,
               icon: const Icon(Icons.upload_file_outlined),
               label: const Text('Replace scan file'),
             ),
