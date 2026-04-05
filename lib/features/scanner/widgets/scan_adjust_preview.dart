@@ -62,7 +62,7 @@ class _ScanAdjustPreviewState extends State<ScanAdjustPreview> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Rotate if the receipt is sideways, then continue to extraction.',
+          'Rotate if needed. Extraction runs in the background — when you continue, we show progress (often almost instant).',
           style: TextStyle(fontSize: 14, color: BillyTheme.zinc400),
         ),
         const SizedBox(height: 16),
@@ -104,7 +104,7 @@ class _ScanAdjustPreviewState extends State<ScanAdjustPreview> {
             backgroundColor: BillyTheme.emerald600,
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
-          child: const Text('Continue to extract'),
+          child: const Text('Yes, extract'),
         ),
         const SizedBox(height: 8),
         TextButton(

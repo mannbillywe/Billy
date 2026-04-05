@@ -13,6 +13,12 @@ class SupabaseService {
     return s.contains('PGRST204') && s.contains('category_source');
   }
 
+  /// Remote DB may not have `lend_borrow_entries.document_id` migration yet (PGRST204).
+  static bool _isMissingLendBorrowDocumentIdColumnError(Object e) {
+    final s = e.toString();
+    return s.contains('PGRST204') && s.contains('document_id');
+  }
+
   // ─── Documents ───────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchDocuments() async {
     if (_uid == null) return [];
@@ -42,7 +48,8 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> insertDocument({
+  /// Returns the new row id, or null if not signed in.
+  static Future<String?> insertDocument({
     required String vendorName,
     required double amount,
     required double taxAmount,
@@ -57,7 +64,7 @@ class SupabaseService {
     String? categoryId,
     String? categorySource,
   }) async {
-    if (_uid == null) return;
+    if (_uid == null) return null;
     final row = <String, dynamic>{
       'user_id': _uid,
       'vendor_name': vendorName,
@@ -74,12 +81,13 @@ class SupabaseService {
       if (categorySource != null) 'category_source': categorySource,
     };
     try {
-      await _client.from('documents').insert(row);
+      final res = await _client.from('documents').insert(row).select('id').single();
+      return res['id'] as String?;
     } catch (e) {
       if (categorySource != null && _isMissingCategorySourceColumnError(e)) {
         row.remove('category_source');
-        await _client.from('documents').insert(row);
-        return;
+        final res = await _client.from('documents').insert(row).select('id').single();
+        return res['id'] as String?;
       }
       rethrow;
     }
@@ -87,8 +95,13 @@ class SupabaseService {
 
   static Future<void> deleteDocument(String id) async {
     final uid = _uid;
-    if (uid == null) return;
-    await _client.from('documents').delete().eq('id', id).eq('user_id', uid);
+    if (uid == null) throw StateError('Not signed in');
+    final rows = await _client.from('documents').delete().eq('id', id).eq('user_id', uid).select('id');
+    if (rows.isEmpty) {
+      throw StateError(
+        'Could not delete this document. It may not exist, or you may not have permission.',
+      );
+    }
   }
 
   /// Single document for detail / edit flows.
@@ -325,6 +338,26 @@ class SupabaseService {
     }).eq('id', invoiceId).eq('user_id', uid);
   }
 
+  /// Removes Storage file and `invoices` row (cascades items/events). Used when user cancels scan.
+  static Future<void> deleteInvoiceForUser(String invoiceId) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final row = await _client
+        .from('invoices')
+        .select('file_path')
+        .eq('id', invoiceId)
+        .eq('user_id', uid)
+        .maybeSingle();
+    if (row == null) return;
+    final path = row['file_path'] as String?;
+    if (path != null && path.isNotEmpty) {
+      try {
+        await _client.storage.from('invoice-files').remove([path]);
+      } catch (_) {}
+    }
+    await _client.from('invoices').delete().eq('id', invoiceId).eq('user_id', uid);
+  }
+
   // ─── Lend / Borrow ──────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchLendBorrow() async {
     final uid = _uid;
@@ -359,9 +392,10 @@ class SupabaseService {
     String? dueDate,
     String? counterpartyUserId,
     String? groupId,
+    String? documentId,
   }) async {
     if (_uid == null) throw StateError('Not signed in');
-    await _client.from('lend_borrow_entries').insert({
+    final row = <String, dynamic>{
       'user_id': _uid,
       'counterparty_name': counterpartyName,
       'amount': amount,
@@ -370,18 +404,42 @@ class SupabaseService {
       'due_date': dueDate,
       if (counterpartyUserId != null) 'counterparty_user_id': counterpartyUserId,
       if (groupId != null) 'group_id': groupId,
-    });
+      if (documentId != null) 'document_id': documentId,
+    };
+    try {
+      await _client.from('lend_borrow_entries').insert(row);
+    } catch (e) {
+      if (documentId != null && _isMissingLendBorrowDocumentIdColumnError(e)) {
+        row.remove('document_id');
+        await _client.from('lend_borrow_entries').insert(row);
+        return;
+      }
+      rethrow;
+    }
   }
 
   static Future<void> settleLendBorrow(String id) async {
-    await _client
+    if (_uid == null) throw StateError('Not signed in');
+    final rows = await _client
         .from('lend_borrow_entries')
         .update({'status': 'settled', 'updated_at': DateTime.now().toIso8601String()})
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
+    if (rows.isEmpty) {
+      throw StateError(
+        'Could not settle this entry. It may have been removed or you may not have access.',
+      );
+    }
   }
 
   static Future<void> deleteLendBorrow(String id) async {
-    await _client.from('lend_borrow_entries').delete().eq('id', id);
+    if (_uid == null) throw StateError('Not signed in');
+    final rows = await _client.from('lend_borrow_entries').delete().eq('id', id).select('id');
+    if (rows.isEmpty) {
+      throw StateError(
+        'Could not delete this entry. Only the person who created it can remove it, or it may no longer exist.',
+      );
+    }
   }
 
   // ─── Splits ──────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -36,6 +37,15 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   String? _previewMime;
   String? _previewSource;
 
+  /// Bytes used when background prefetch started (compare on Continue).
+  Uint8List? _prefetchSeedBytes;
+  Future<void>? _prefetchJob;
+  bool _prefetchCancelled = false;
+  String? _prefetchedInvoiceId;
+  ExtractedReceipt? _prefetchedReceipt;
+
+  static const _minProcessingAnimation = Duration(milliseconds: 720);
+
   String _mimeTypeForPath(String name) {
     final p = name.toLowerCase();
     if (p.endsWith('.png')) return 'image/png';
@@ -45,31 +55,92 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     return 'image/jpeg';
   }
 
-  Future<void> _runPipeline({
+  Future<({String invoiceId, ExtractedReceipt receipt})> _ocrUploadAndProcess({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+    required String source,
+    required bool countTowardOcrLimit,
+  }) async {
+    if (countTowardOcrLimit) {
+      await SupabaseService.incrementOcrScan();
+      ref.invalidate(usageLimitsProvider);
+    }
+    return InvoiceOcrPipeline.uploadAndProcess(
+      bytes: bytes,
+      fileName: fileName,
+      mimeType: mimeType,
+      source: source,
+    );
+  }
+
+  /// Runs while user rotates/adjusts — same bytes as initial preview when they tap Continue.
+  Future<void> _prefetchDuringAdjust() async {
+    if (_previewBytes == null ||
+        _previewFileName == null ||
+        _previewMime == null ||
+        _previewSource == null) {
+      return;
+    }
+    final seed = Uint8List.fromList(_previewBytes!);
+    final fn = _previewFileName!;
+    final mime = _previewMime!;
+    final src = _previewSource!;
+    _prefetchSeedBytes = seed;
+    _prefetchedInvoiceId = null;
+    _prefetchedReceipt = null;
+
+    try {
+      final result = await _ocrUploadAndProcess(
+        bytes: seed,
+        fileName: fn,
+        mimeType: mime,
+        source: src,
+        countTowardOcrLimit: true,
+      );
+      if (!mounted || _prefetchCancelled) {
+        await SupabaseService.deleteInvoiceForUser(result.invoiceId);
+        return;
+      }
+      _prefetchedInvoiceId = result.invoiceId;
+      _prefetchedReceipt = result.receipt;
+    } catch (e, stack) {
+      BillyLogger.warn('Background OCR during adjust failed', '$e\n$stack');
+    }
+  }
+
+  void _schedulePrefetchAfterAdjustFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _state != ScanState.previewAdjust) return;
+      _prefetchCancelled = false;
+      _prefetchJob = _prefetchDuringAdjust();
+    });
+  }
+
+  Future<void> _runPipelineDirect({
     required List<int> bytes,
     required String fileName,
     required String mime,
     required String source,
   }) async {
     if (_extractInFlight) return;
+    _extractInFlight = true;
     setState(() {
-      _extractInFlight = true;
       _state = ScanState.processing;
       _errorMessage = null;
       _previewBytes = null;
       _previewFileName = null;
       _previewMime = null;
       _previewSource = null;
+      _clearPrefetchState();
     });
     try {
-      await SupabaseService.incrementOcrScan();
-      ref.invalidate(usageLimitsProvider);
-
-      final result = await InvoiceOcrPipeline.uploadAndProcess(
+      final result = await _ocrUploadAndProcess(
         bytes: Uint8List.fromList(bytes),
         fileName: fileName,
         mimeType: mime,
         source: source,
+        countTowardOcrLimit: true,
       );
       if (!mounted) return;
       setState(() {
@@ -87,6 +158,123 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         _errorMessage = e.toString().split('\n').first;
       });
     }
+  }
+
+  Future<void> _onContinueFromAdjust(
+    Uint8List bytes,
+    String fileName,
+    String mime,
+    String source,
+  ) async {
+    if (_extractInFlight) return;
+    _extractInFlight = true;
+    setState(() {
+      _state = ScanState.processing;
+      _errorMessage = null;
+    });
+
+    final minUi = Future<void>.delayed(_minProcessingAnimation);
+    final sameAsPrefetchSeed = _prefetchSeedBytes != null &&
+        _prefetchSeedBytes!.length == bytes.length &&
+        listEquals(_prefetchSeedBytes!, bytes);
+
+    try {
+      if (sameAsPrefetchSeed) {
+        await Future.wait([minUi, _prefetchJob ?? Future.value()]);
+        if (!mounted) return;
+        if (_prefetchCancelled) {
+          setState(() {
+            _extractInFlight = false;
+            _state = ScanState.idle;
+          });
+          return;
+        }
+        if (_prefetchedReceipt != null && _prefetchedInvoiceId != null) {
+          setState(() {
+            _extractInFlight = false;
+            _state = ScanState.success;
+            _extracted = _prefetchedReceipt;
+            _invoiceId = _prefetchedInvoiceId;
+          });
+          _clearPrefetchState();
+          return;
+        }
+        // Prefetch failed: retry same image without charging OCR twice.
+        try {
+          final result = await _ocrUploadAndProcess(
+            bytes: bytes,
+            fileName: fileName,
+            mimeType: mime,
+            source: source,
+            countTowardOcrLimit: false,
+          );
+          if (!mounted) return;
+          setState(() {
+            _extractInFlight = false;
+            _state = ScanState.success;
+            _extracted = result.receipt;
+            _invoiceId = result.invoiceId;
+          });
+          _clearPrefetchState();
+          return;
+        } catch (e, stack) {
+          BillyLogger.extractionFailed(e, stack);
+          if (!mounted) return;
+          setState(() {
+            _extractInFlight = false;
+            _state = ScanState.error;
+            _errorMessage = e.toString().split('\n').first;
+          });
+          _clearPrefetchState();
+          return;
+        }
+      }
+
+      // User changed the image (e.g. rotate) — stop prefetch, remove any partial invoice, re-run OCR.
+      _prefetchCancelled = true;
+      try {
+        await _prefetchJob;
+      } catch (_) {}
+      if (_prefetchedInvoiceId != null) {
+        await SupabaseService.deleteInvoiceForUser(_prefetchedInvoiceId!);
+      }
+      _clearPrefetchState();
+      await minUi;
+      if (!mounted) return;
+
+      final result = await _ocrUploadAndProcess(
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mime,
+        source: source,
+        countTowardOcrLimit: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _extractInFlight = false;
+        _state = ScanState.success;
+        _extracted = result.receipt;
+        _invoiceId = result.invoiceId;
+      });
+    } catch (e, stack) {
+      BillyLogger.extractionFailed(e, stack);
+      if (!mounted) return;
+      setState(() {
+        _extractInFlight = false;
+        _state = ScanState.error;
+        _errorMessage = e.toString().split('\n').first;
+      });
+    } finally {
+      _extractInFlight = false;
+      _clearPrefetchState();
+    }
+  }
+
+  void _clearPrefetchState() {
+    _prefetchSeedBytes = null;
+    _prefetchJob = null;
+    _prefetchedInvoiceId = null;
+    _prefetchedReceipt = null;
   }
 
   /// Camera / gallery — image only (compressed).
@@ -111,8 +299,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         _previewMime = mime;
         _previewSource = src;
       });
+      _schedulePrefetchAfterAdjustFrame();
     } else {
-      await _runPipeline(bytes: bytes, fileName: file.name, mime: mime, source: src);
+      await _runPipelineDirect(bytes: bytes, fileName: file.name, mime: mime, source: src);
     }
   }
 
@@ -140,7 +329,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final name = f.name;
     final mime = _mimeTypeForPath(name);
     if (mime == 'application/pdf') {
-      await _runPipeline(bytes: bytes, fileName: name, mime: mime, source: 'file');
+      await _runPipelineDirect(bytes: bytes, fileName: name, mime: mime, source: 'file');
     } else if (isAdjustableRasterMime(mime)) {
       if (!mounted) return;
       setState(() {
@@ -150,12 +339,37 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         _previewMime = mime;
         _previewSource = 'file';
       });
+      _schedulePrefetchAfterAdjustFrame();
     } else {
-      await _runPipeline(bytes: bytes, fileName: name, mime: mime, source: 'file');
+      await _runPipelineDirect(bytes: bytes, fileName: name, mime: mime, source: 'file');
     }
   }
 
   void _discard() {
+    unawaited(_performDiscard());
+  }
+
+  Future<void> _performDiscard() async {
+    _prefetchCancelled = true;
+    try {
+      await _prefetchJob;
+    } catch (_) {}
+    if (_prefetchedInvoiceId != null) {
+      try {
+        await SupabaseService.deleteInvoiceForUser(_prefetchedInvoiceId!);
+      } catch (e) {
+        BillyLogger.warn('discard: delete prefetch invoice failed', e);
+      }
+    }
+    final inv = _invoiceId;
+    if (inv != null && _state == ScanState.success) {
+      try {
+        await SupabaseService.deleteInvoiceForUser(inv);
+      } catch (e) {
+        BillyLogger.warn('discard: delete invoice failed', e);
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _state = ScanState.idle;
       _extracted = null;
@@ -166,6 +380,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _previewMime = null;
       _previewSource = null;
       _extractInFlight = false;
+      _clearPrefetchState();
     });
   }
 
@@ -214,7 +429,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   mimeType: _previewMime!,
                   source: _previewSource!,
                   onContinue: (b, fn, m, s) {
-                    _runPipeline(bytes: b, fileName: fn, mime: m, source: s);
+                    _onContinueFromAdjust(b, fn, m, s);
                   },
                   onRetake: _discard,
                 ),

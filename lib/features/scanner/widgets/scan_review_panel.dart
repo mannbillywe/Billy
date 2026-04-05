@@ -131,13 +131,21 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  /// Line selection total, or invoice header total / subtotal when lines are off or empty.
+  double _effectiveAllocation(ExtractedReceipt draft) {
+    var a = _allocationTotal(draft);
+    if (a <= 0 && draft.total > 0) return draft.total;
+    if (a <= 0 && draft.subtotal > 0) return draft.subtotal;
+    return a;
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
 
     final draft = _buildReceipt();
-    final alloc = _allocationTotal(draft);
+    final alloc = _effectiveAllocation(draft);
     if (alloc <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Select at least one line item with an amount, or fix totals.')),
@@ -238,11 +246,14 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         );
       }
 
-      await ref.read(documentsProvider.notifier).addDocument(
+      final docAmount = draft.total > 0 ? draft.total : alloc;
+      final docDate = draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10);
+
+      final savedDocId = await ref.read(documentsProvider.notifier).addDocument(
             vendorName: draft.vendorName.isNotEmpty ? draft.vendorName : 'Invoice',
-            amount: draft.total,
+            amount: docAmount,
             taxAmount: taxStored,
-            date: draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10),
+            date: docDate,
             type: (draft.invoiceNumber != null && draft.invoiceNumber!.isNotEmpty) ? 'invoice' : 'receipt',
             description: descParts.isEmpty ? null : descParts.join(', '),
             paymentMethod: draft.paymentMethod,
@@ -287,6 +298,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
               notes: draft.notes,
               counterpartyUserId: _linkedUserId,
               groupId: _groupId,
+              documentId: savedDocId,
             );
       }
 
@@ -319,7 +331,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     if (uid == null) return;
 
     final draft = _buildReceipt();
-    final alloc = _allocationTotal(draft);
+    final alloc = _effectiveAllocation(draft);
     final amount = alloc > 0 ? alloc : draft.total;
 
     setState(() => _saving = true);
@@ -337,12 +349,13 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
           descParts.isNotEmpty ? await SupabaseService.resolveCategoryIdByName(descParts.first) : null;
 
       final extractedPayload = _extractedPayload(draft, alloc)..['scan_draft'] = true;
+      final docDate = draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10);
 
       await ref.read(documentsProvider.notifier).addDocument(
             vendorName: draft.vendorName.isNotEmpty ? draft.vendorName : 'Draft',
             amount: amount >= 0 ? amount : 0,
             taxAmount: taxStored,
-            date: draft.date.isNotEmpty ? draft.date : DateTime.now().toIso8601String().substring(0, 10),
+            date: docDate,
             type: (draft.invoiceNumber != null && draft.invoiceNumber!.isNotEmpty) ? 'invoice' : 'receipt',
             description: descParts.isEmpty ? null : descParts.join(', '),
             paymentMethod: draft.paymentMethod,
