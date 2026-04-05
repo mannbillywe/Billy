@@ -119,13 +119,22 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? null : 'io.supabase.billy://login-callback/',
+        redirectTo: kIsWeb ? Uri.base.origin : 'io.supabase.billy://login-callback/',
       );
     } on AuthException catch (e) {
-      _showMsg(e.message, error: true);
+      _showMsg(_googleAuthHint(e.message), error: true);
     } catch (_) {
-      _showMsg('Google sign-in failed. Make sure Google is enabled in your Supabase dashboard.', error: true);
+      _showMsg(_googleAuthHint(null), error: true);
     }
+  }
+
+  /// Supabase returns e.g. "Unsupported provider: missing Google client secret" when the provider is off or secret is empty.
+  String _googleAuthHint(String? apiMessage) {
+    final base = apiMessage?.trim();
+    final head = (base != null && base.isNotEmpty) ? base : 'Google sign-in failed.';
+    return '$head\n\nEnable Google under Supabase → Authentication → Providers and add the '
+        'Google OAuth Client ID and Client Secret from Google Cloud Console (not your Supabase CLI token). '
+        'See docs/AUTH_GOOGLE_SETUP.md.';
   }
 
   Future<void> _signInWithApple() async {
