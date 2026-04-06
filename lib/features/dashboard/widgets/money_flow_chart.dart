@@ -8,9 +8,12 @@ class MoneyFlowChart extends StatelessWidget {
 
   final List<double> data;
 
+  bool get _allZeros =>
+      data.isEmpty || (data.length == 7 && data.every((e) => e == 0));
+
   @override
   Widget build(BuildContext context) {
-    if (data.isEmpty) {
+    if (_allZeros) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

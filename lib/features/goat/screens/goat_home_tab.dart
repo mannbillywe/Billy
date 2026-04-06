@@ -5,8 +5,10 @@ import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/goat_theme.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
+import '../../../providers/goat_cash_providers.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
+import '../finance/cashflow_engine.dart';
 import '../utils/goat_dashboard_helpers.dart';
 import '../widgets/goat_chip.dart';
 import '../widgets/goat_premium_card.dart';
@@ -28,9 +30,34 @@ class GoatHomeTab extends ConsumerWidget {
     }
   }
 
+  static String _forecastRiskChip(String r) {
+    switch (r) {
+      case 'low':
+        return 'Low';
+      case 'medium':
+        return 'Medium';
+      case 'high':
+        return 'Elevated';
+      default:
+        return r;
+    }
+  }
+
+  static GoatCashFlowRisk _forecastRiskToDocStyle(String r) {
+    switch (r) {
+      case 'high':
+        return GoatCashFlowRisk.high;
+      case 'medium':
+        return GoatCashFlowRisk.medium;
+      default:
+        return GoatCashFlowRisk.low;
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final docsAsync = ref.watch(documentsProvider);
+    final forecastAsync = ref.watch(goatForecastProvider);
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'USD';
     final weekBasis = ref.watch(weekSpendBasisProvider);
     final all = docsAsync.valueOrNull ?? [];
@@ -113,29 +140,82 @@ class GoatHomeTab extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Safe to spend (preview)',
+                      forecastAsync.hasValue ? 'Safe to spend (model)' : 'Safe to spend',
                       style: TextStyle(
                         color: GoatTokens.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    GoatChip(label: _riskLabel(risk), selected: true),
+                    GoatChip(
+                      label: forecastAsync.hasValue
+                          ? _forecastRiskChip(forecastAsync.requireValue.riskLevel)
+                          : _riskLabel(risk),
+                      selected: true,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  AppCurrency.format(roughBuffer, currency),
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: GoatTokens.gold,
+                if (forecastAsync.isLoading && !forecastAsync.hasValue)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(color: GoatTokens.gold, strokeWidth: 2),
                       ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Rough 2-day buffer from your last 7 days of recorded spend. Add income in Forecast for a full picture.',
-                  style: TextStyle(color: GoatTokens.textMuted, fontSize: 11, height: 1.35),
-                ),
+                    ),
+                  )
+                else if (forecastAsync.hasError && !forecastAsync.hasValue)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppCurrency.format(roughBuffer, currency),
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: GoatTokens.gold,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Forecast could not load (check DB migrations and Forecast tab). Showing a rough 2-day buffer from recorded spend instead.',
+                        style: TextStyle(color: GoatTokens.textMuted, fontSize: 11, height: 1.35),
+                      ),
+                    ],
+                  )
+                else if (forecastAsync.hasValue) ...[
+                  Text(
+                    AppCurrency.format(CashflowMoneyLine.fromMinor(forecastAsync.requireValue.safeToSpendNowMinor), currency),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: GoatTokens.gold,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _forecastHomeSubtitle(forecastAsync.requireValue, currency),
+                    style: TextStyle(color: GoatTokens.textMuted, fontSize: 11, height: 1.35),
+                  ),
+                ] else
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppCurrency.format(roughBuffer, currency),
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: GoatTokens.gold,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Rough 2-day buffer from your last 7 days of recorded spend. Open Forecast to add accounts, income, and bills for a deterministic number.',
+                        style: TextStyle(color: GoatTokens.textMuted, fontSize: 11, height: 1.35),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -171,9 +251,16 @@ class GoatHomeTab extends ConsumerWidget {
                       Text('Cash-flow risk', style: TextStyle(color: GoatTokens.textMuted, fontSize: 11)),
                       const SizedBox(height: 6),
                       Text(
-                        _riskLabel(risk),
+                        forecastAsync.hasValue
+                            ? _forecastRiskChip(forecastAsync.requireValue.riskLevel)
+                            : _riskLabel(risk),
                         style: TextStyle(
-                          color: risk == GoatCashFlowRisk.high ? const Color(0xFFFCA5A5) : GoatTokens.textPrimary,
+                          color: (forecastAsync.hasValue
+                                  ? _forecastRiskToDocStyle(forecastAsync.requireValue.riskLevel)
+                                  : risk) ==
+                                  GoatCashFlowRisk.high
+                              ? const Color(0xFFFCA5A5)
+                              : GoatTokens.textPrimary,
                           fontWeight: FontWeight.w800,
                           fontSize: 18,
                         ),
@@ -272,7 +359,7 @@ class GoatHomeTab extends ConsumerWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Keep discretionary spend flat for two weeks to lower cash-flow volatility. When Forecast ships, we will anchor this to income and fixed bills.',
+                        _goatCoachCopy(forecastAsync),
                         style: TextStyle(color: GoatTokens.textMuted, fontSize: 12, height: 1.45),
                       ),
                     ],
@@ -291,7 +378,7 @@ class GoatHomeTab extends ConsumerWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              GoatChip(label: 'Add bill', onTap: () => onNavigateToModule(1)),
+              GoatChip(label: 'Recurring & subs', onTap: () => onNavigateToModule(1)),
               GoatChip(label: 'Add income', onTap: () => onNavigateToModule(2)),
               GoatChip(label: 'Add goal', onTap: () => onNavigateToModule(3)),
               GoatChip(label: 'Review forecast', onTap: () => onNavigateToModule(2)),
@@ -300,6 +387,44 @@ class GoatHomeTab extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  static String _forecastHomeSubtitle(CashflowForecastResult f, String currency) {
+    final b = StringBuffer()
+      ..write(
+        'Deterministic: included liquid balances, your reserve, and scheduled in/out until the next income date (or horizon end). ',
+      );
+    if (f.nextIncomeDate != null) {
+      b.write(
+        'Next modeled income: ${f.nextIncomeDate!.year}-${f.nextIncomeDate!.month.toString().padLeft(2, '0')}-${f.nextIncomeDate!.day.toString().padLeft(2, '0')}. ',
+      );
+    } else {
+      b.write('Add an income stream with a next date in Forecast to anchor obligations to payday. ');
+    }
+    if (f.lowestBalanceDate != null) {
+      b.write(
+        'Lowest projected closing: ${AppCurrency.format(CashflowMoneyLine.fromMinor(f.projectedMinBalanceMinor), currency)} on '
+        '${f.lowestBalanceDate!.year}-${f.lowestBalanceDate!.month.toString().padLeft(2, '0')}-${f.lowestBalanceDate!.day.toString().padLeft(2, '0')}.',
+      );
+    }
+    return b.toString().trim();
+  }
+
+  static String _goatCoachCopy(AsyncValue<CashflowForecastResult> forecastAsync) {
+    if (forecastAsync.hasValue) {
+      final f = forecastAsync.requireValue;
+      if (f.riskLevel == 'high') {
+        return 'The model flags high risk: safe-to-spend may be below zero or projected balance can go negative. Open Forecast for the breakdown and to adjust accounts, buffer, or income.';
+      }
+      if (f.riskLevel == 'medium') {
+        return 'Cushion is thin relative to your buffer and upcoming obligations. Review the next two weeks in Forecast.';
+      }
+      if (f.nextIncomeDate == null) {
+        return 'Add an active income stream with a next expected date in Forecast so safe-to-spend can anchor to payday.';
+      }
+      return 'Outlook is stable for the selected horizon. Keep recurring bills updated so projected outflows stay accurate.';
+    }
+    return 'Set up accounts, recurring bills, and income in Forecast and Recurring so tips match the same numbers as the model.';
   }
 
   Widget _miniStat(BuildContext context, String label, String value) {

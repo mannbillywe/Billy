@@ -4,7 +4,7 @@ import '../core/utils/document_date_range.dart';
 
 class WeekSpendBasisNotifier extends Notifier<WeekSpendBasis> {
   @override
-  WeekSpendBasis build() => WeekSpendBasis.uploadDate;
+  WeekSpendBasis build() => WeekSpendBasis.hybrid;
 
   void setBasis(WeekSpendBasis basis) => state = basis;
 }

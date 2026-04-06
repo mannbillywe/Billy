@@ -11,6 +11,7 @@ class SpendHero extends StatelessWidget {
     required this.weekSpend,
     required this.currencyCode,
     this.weekSubtitle = 'Receipts & invoices · by upload date (Mon–today)',
+    this.documentCountThisWeek,
     this.weeklyData = const [],
     this.lendCollectWeek = const [],
     this.lendPayWeek = const [],
@@ -25,6 +26,8 @@ class SpendHero extends StatelessWidget {
   final String? currencyCode;
   /// Explains how this week is bucketed (upload vs bill date).
   final String weekSubtitle;
+  /// Non-draft documents counted in this week’s total (same basis as [weekSpend]).
+  final int? documentCountThisWeek;
   final List<double> weeklyData;
   /// Mon–Sun pending IOUs created that day (collect / lent side), viewer perspective.
   final List<double> lendCollectWeek;
@@ -99,6 +102,17 @@ class SpendHero extends StatelessWidget {
                   color: BillyTheme.emerald700.withValues(alpha: 0.55),
                 ),
               ),
+              if (documentCountThisWeek != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${documentCountThisWeek!} ${documentCountThisWeek == 1 ? 'receipt or invoice' : 'receipts & invoices'} in this week (same rules as the total above)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: BillyTheme.emerald700.withValues(alpha: 0.65),
+                  ),
+                ),
+              ],
               if (friendPendingCollect > 0 || friendPendingPay > 0) ...[
                 const SizedBox(height: 14),
                 Container(

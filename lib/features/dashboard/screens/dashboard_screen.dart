@@ -45,6 +45,7 @@ class DashboardScreen extends ConsumerWidget {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     final weekBasis = ref.watch(weekSpendBasisProvider);
     final weekSpend = DashboardSpendMath.thisWeekDocumentSpend(allDocs, null, weekBasis);
+    final weekDocCount = DashboardSpendMath.thisWeekDocumentCount(allDocs, null, weekBasis);
     final lastWeekSpend = DashboardSpendMath.lastCalendarWeekDocumentSpend(allDocs, null, weekBasis);
     final dailyData = DashboardSpendMath.thisWeekDailyDocumentSpend(allDocs, null, weekBasis);
     final lbEntries = lbAsync.valueOrNull ?? [];
@@ -166,6 +167,7 @@ class DashboardScreen extends ConsumerWidget {
             weekSpend: weekSpend,
             currencyCode: currency,
             weekSubtitle: DashboardSpendMath.weekBasisSubtitle(weekBasis),
+            documentCountThisWeek: weekDocCount,
             weeklyData: dailyData,
             lendCollectWeek: lbWeekDaily.collect,
             lendPayWeek: lbWeekDaily.pay,

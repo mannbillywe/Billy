@@ -107,11 +107,29 @@ class DashboardSpendMath {
     }
   }
 
+  /// Count of non-draft documents attributed to this week (same rules as [thisWeekDocumentSpend]).
+  static int thisWeekDocumentCount(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
+  ]) {
+    final n = _dateOnly(now ?? DateTime.now());
+    final mon = mondayOfWeek(n);
+    final sunday = _dateOnly(mon.add(const Duration(days: 6)));
+    var c = 0;
+    for (final d in docs) {
+      if ((d['status'] as String?) == 'draft') continue;
+      if (_thisWeekActivityDay(d, mon, n, sunday, basis) == null) continue;
+      c++;
+    }
+    return c;
+  }
+
   /// Non-draft document amounts attributed to the current calendar week (local).
   static double thisWeekDocumentSpend(
     List<Map<String, dynamic>> docs, [
     DateTime? now,
-    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
   ]) {
     final n = _dateOnly(now ?? DateTime.now());
     final mon = mondayOfWeek(n);
@@ -129,7 +147,7 @@ class DashboardSpendMath {
   static double lastCalendarWeekDocumentSpend(
     List<Map<String, dynamic>> docs, [
     DateTime? now,
-    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
   ]) {
     final n = _dateOnly(now ?? DateTime.now());
     final thisMon = mondayOfWeek(n);
@@ -148,7 +166,7 @@ class DashboardSpendMath {
   static List<double> thisWeekDailyDocumentSpend(
     List<Map<String, dynamic>> docs, [
     DateTime? now,
-    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
   ]) {
     final n = _dateOnly(now ?? DateTime.now());
     final mon = mondayOfWeek(n);
@@ -176,7 +194,7 @@ class DashboardSpendMath {
   static bool debugSeriesMatchesHero(
     List<Map<String, dynamic>> docs, [
     DateTime? now,
-    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
   ]) {
     final series = thisWeekDailyDocumentSpend(docs, now, basis);
     final n = _dateOnly(now ?? DateTime.now());
