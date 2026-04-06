@@ -115,7 +115,7 @@ class CashflowEngine {
 
     void addEv(DateTime d, CashflowMoneyLine line) {
       final k = _dOnly(d);
-      events.putIfAbsent(k, () => []).add(line);
+      events.putIfAbsent(k, () => <CashflowMoneyLine>[]).add(line);
     }
 
     void addBillOutflowsFromOccurrences() {
@@ -137,9 +137,9 @@ class CashflowEngine {
         if (st != 'active' && st != 'suggested') continue;
         final freq = s['frequency'] as String? ?? 'monthly';
         final iv = (s['interval_count'] as num?)?.toInt() ?? 1;
-        var cursor = _parseDate(s['next_due_date']);
-        if (cursor == null) continue;
-        cursor = _dOnly(cursor);
+        final firstDue = _parseDate(s['next_due_date']);
+        if (firstDue == null) continue;
+        DateTime cursor = _dOnly(firstDue);
         final exp = _numMinor(s['expected_amount']);
         if (exp <= 0) continue;
         final title = (s['title'] as String?)?.trim().isNotEmpty == true ? s['title'] as String : 'Recurring';
@@ -164,9 +164,9 @@ class CashflowEngine {
       final freq = inc['frequency'] as String? ?? 'monthly';
       final amt = _numMinor(inc['expected_amount']);
       if (amt <= 0) continue;
-      var cursor = _parseDate(inc['next_expected_date']);
-      if (cursor == null) continue;
-      cursor = _dOnly(cursor);
+      final incFirst = _parseDate(inc['next_expected_date']);
+      if (incFirst == null) continue;
+      DateTime cursor = _dOnly(incFirst);
       final title = (inc['title'] as String?) ?? 'Income';
       while (!cursor.isAfter(end)) {
         if (!cursor.isBefore(today)) {
@@ -222,13 +222,14 @@ class CashflowEngine {
 
     for (final day in sortedDays) {
       final lines = List<CashflowMoneyLine>.from(events[day] ?? []);
-      var inflow = 0;
-      var outflow = 0;
+      int inflow = 0;
+      int outflow = 0;
       for (final l in lines) {
-        if (l.minor < 0) {
-          inflow += -l.minor;
+        final int m = l.minor;
+        if (m < 0) {
+          inflow = inflow - m;
         } else {
-          outflow += l.minor;
+          outflow = outflow + m;
         }
       }
       final closing = opening - outflow + inflow;
@@ -248,15 +249,16 @@ class CashflowEngine {
     }
 
     final anchor = nextIncome ?? end;
-    var dueOut = 0;
-    var dueIn = 0;
+    int dueOut = 0;
+    int dueIn = 0;
     for (final day in sortedDays) {
       if (day.isAfter(anchor)) break;
-      for (final l in events[day] ?? []) {
-        if (l.minor > 0) {
-          dueOut += l.minor;
+      for (final l in events[day] ?? const <CashflowMoneyLine>[]) {
+        final int m = l.minor;
+        if (m > 0) {
+          dueOut = dueOut + m;
         } else {
-          dueIn += -l.minor;
+          dueIn = dueIn - m;
         }
       }
     }
@@ -264,15 +266,16 @@ class CashflowEngine {
     final safeNow = liquid - reserveMinor - dueOut + dueIn;
 
     final sevenEnd = today.add(const Duration(days: 7));
-    var dueOut7 = 0;
-    var dueIn7 = 0;
+    int dueOut7 = 0;
+    int dueIn7 = 0;
     for (final day in sortedDays) {
       if (day.isAfter(sevenEnd)) break;
-      for (final l in events[day] ?? []) {
-        if (l.minor > 0) {
-          dueOut7 += l.minor;
+      for (final l in events[day] ?? const <CashflowMoneyLine>[]) {
+        final int m = l.minor;
+        if (m > 0) {
+          dueOut7 = dueOut7 + m;
         } else {
-          dueIn7 += -l.minor;
+          dueIn7 = dueIn7 - m;
         }
       }
     }
