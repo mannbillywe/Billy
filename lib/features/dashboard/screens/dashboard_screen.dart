@@ -47,10 +47,10 @@ class DashboardScreen extends ConsumerWidget {
     final allDocs = docsAsync.valueOrNull ?? [];
     final uid = Supabase.instance.client.auth.currentUser?.id;
     final weekBasis = ref.watch(weekSpendBasisProvider);
-    final weekSpend = DashboardSpendMath.thisWeekDocumentSpend(allDocs, null, weekBasis);
-    final weekDocCount = DashboardSpendMath.thisWeekDocumentCount(allDocs, null, weekBasis);
-    final lastWeekSpend = DashboardSpendMath.lastCalendarWeekDocumentSpend(allDocs, null, weekBasis);
-    final dailyData = DashboardSpendMath.thisWeekDailyDocumentSpend(allDocs, null, weekBasis);
+    final weekSpend = DashboardSpendMath.rollingSevenDayDocumentSpend(allDocs, null, weekBasis);
+    final weekDocCount = DashboardSpendMath.rollingSevenDayDocumentCount(allDocs, null, weekBasis);
+    final lastWeekSpend = DashboardSpendMath.priorRollingSevenDayDocumentSpend(allDocs, null, weekBasis);
+    final dailyData = DashboardSpendMath.rollingSevenDayDailyDocumentSpend(allDocs, null, weekBasis);
     final lbEntries = lbAsync.valueOrNull ?? [];
     final pendingLb = DashboardSpendMath.pendingLendBorrowTotals(lbEntries, uid);
     final addedLb = DashboardSpendMath.lendBorrowAddedThisCalendarWeek(lbEntries, uid);
@@ -131,7 +131,7 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ),
           Text(
-            'Count this week by',
+            'Last 7 days (same as Analytics 1W) — count by',
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BillyTheme.gray600),
           ),
           const SizedBox(height: 8),

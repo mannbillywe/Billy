@@ -208,14 +208,61 @@ class DashboardSpendMath {
     return (sum - thisWeekDocumentSpend(docs, now, basis)).abs() < 0.0001;
   }
 
+  /// Verifies [rollingSevenDayDocumentSpend] equals the sum of all 7 buckets in [rollingSevenDayDailyDocumentSpend].
+  static bool debugRollingSeriesMatchesHero(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
+  ]) {
+    final series = rollingSevenDayDailyDocumentSpend(docs, now, basis);
+    final sum = series.fold<double>(0, (a, b) => a + b);
+    return (sum - rollingSevenDayDocumentSpend(docs, now, basis)).abs() < 0.0001;
+  }
+
+  /// Home hero + Money Flow: **rolling last 7 days** ending today (same logic as Analytics **1W** chart).
+  static List<double> rollingSevenDayDailyDocumentSpend(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
+  ]) {
+    final n = _dateOnly(now ?? DateTime.now());
+    return DocumentDateRange.lastSevenDaySpendingByBasis(docs, n, basis);
+  }
+
+  static double rollingSevenDayDocumentSpend(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
+  ]) {
+    return DocumentDateRange.totalRollingSevenDaySpend(docs, _dateOnly(now ?? DateTime.now()), basis);
+  }
+
+  static int rollingSevenDayDocumentCount(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
+  ]) {
+    return DocumentDateRange.countDocumentsRollingSevenDay(docs, _dateOnly(now ?? DateTime.now()), basis);
+  }
+
+  /// The 7 days immediately before the current rolling window (for "vs prior week" on home).
+  static double priorRollingSevenDayDocumentSpend(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.hybrid,
+  ]) {
+    final priorEnd = _dateOnly(now ?? DateTime.now()).subtract(const Duration(days: 7));
+    return DocumentDateRange.totalRollingSevenDaySpend(docs, priorEnd, basis);
+  }
+
   static String weekBasisSubtitle(WeekSpendBasis basis) {
     switch (basis) {
       case WeekSpendBasis.uploadDate:
-        return 'Receipts & invoices · by upload date (Mon–today)';
+        return 'Receipts & invoices · last 7 days by save date (matches Analytics 1W)';
       case WeekSpendBasis.invoiceDate:
-        return 'Receipts & invoices · by bill date (Mon–today)';
+        return 'Receipts & invoices · last 7 days by bill date (matches Analytics 1W)';
       case WeekSpendBasis.hybrid:
-        return 'Receipts & invoices · bill date, else upload (Mon–today)';
+        return 'Receipts & invoices · last 7 days — bill date in window, else save date (matches Analytics 1W)';
     }
   }
 

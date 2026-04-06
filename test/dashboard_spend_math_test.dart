@@ -4,8 +4,8 @@ import 'package:billy/core/utils/document_date_range.dart';
 import 'package:billy/features/dashboard/utils/dashboard_spend_math.dart';
 
 void main() {
-  test('this week hero equals sum of daily series Mon through today', () {
-    final monday = DateTime(2026, 4, 6); // Monday
+  test('rolling 7-day hero equals sum of daily series (matches Analytics 1W)', () {
+    final wed = DateTime(2026, 4, 8); // rolling window Apr 2 … Apr 8
     final docs = <Map<String, dynamic>>[
       {'status': 'saved', 'date': '2026-04-06', 'amount': 10},
       {'status': 'saved', 'date': '2026-04-07', 'amount': 25},
@@ -13,25 +13,21 @@ void main() {
       {'status': 'saved', 'date': '2026-04-08', 'amount': 5},
     ];
     const basis = WeekSpendBasis.invoiceDate;
-    final series = DashboardSpendMath.thisWeekDailyDocumentSpend(docs, monday.add(const Duration(days: 2)), basis);
-    final hero = DashboardSpendMath.thisWeekDocumentSpend(docs, monday.add(const Duration(days: 2)), basis);
-    expect(series[0], 10);
-    expect(series[1], 25);
-    expect(series[2], 5);
-    expect(series[3], 0);
-    var sum = 0.0;
-    for (var i = 0; i < 3; i++) {
-      sum += series[i];
-    }
-    expect(sum, hero);
+    final series = DashboardSpendMath.rollingSevenDayDailyDocumentSpend(docs, wed, basis);
+    final hero = DashboardSpendMath.rollingSevenDayDocumentSpend(docs, wed, basis);
+    expect(series.length, 7);
+    expect(series[4], 10); // Apr 6
+    expect(series[5], 25); // Apr 7
+    expect(series[6], 5); // Apr 8
     expect(hero, 40);
+    expect(DashboardSpendMath.debugRollingSeriesMatchesHero(docs, wed, basis), isTrue);
     expect(
-      DashboardSpendMath.debugSeriesMatchesHero(docs, monday.add(const Duration(days: 2))),
-      isTrue,
+      hero,
+      DocumentDateRange.totalRollingSevenDaySpend(docs, DateTime(2026, 4, 8), basis),
     );
   });
 
-  test('last calendar week excludes this week', () {
+  test('last calendar week excludes this week (legacy helper still used elsewhere)', () {
     final wed = DateTime(2026, 4, 8);
     final docs = <Map<String, dynamic>>[
       {'status': 'saved', 'date': '2026-03-30', 'amount': 100},
@@ -40,7 +36,7 @@ void main() {
     expect(DashboardSpendMath.lastCalendarWeekDocumentSpend(docs, wed, WeekSpendBasis.invoiceDate), 100);
   });
 
-  test('this week uses created_at when invoice date is outside the week (OCR)', () {
+  test('rolling 7 days uses created_at when invoice date is outside window (OCR)', () {
     final wed = DateTime(2026, 4, 8);
     final docs = <Map<String, dynamic>>[
       {
@@ -50,8 +46,8 @@ void main() {
         'created_at': '2026-04-07T12:00:00.000Z',
       },
     ];
-    expect(DashboardSpendMath.thisWeekDocumentSpend(docs, wed), 99);
-    expect(DashboardSpendMath.debugSeriesMatchesHero(docs, wed), isTrue);
+    expect(DashboardSpendMath.rollingSevenDayDocumentSpend(docs, wed), 99);
+    expect(DashboardSpendMath.debugRollingSeriesMatchesHero(docs, wed), isTrue);
   });
 
   test('thisWeekDailyLendBorrow buckets pending entries by created_at (viewer = creator)', () {

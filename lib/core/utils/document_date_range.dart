@@ -205,4 +205,31 @@ class DocumentDateRange {
     }
     return out;
   }
+
+  /// Sum of [lastSevenDaySpendingByBasis] — matches Analytics overview when filter is **1W**.
+  static double totalRollingSevenDaySpend(
+    List<Map<String, dynamic>> docs,
+    DateTime endDate,
+    WeekSpendBasis basis,
+  ) {
+    return lastSevenDaySpendingByBasis(docs, endDate, basis).fold<double>(0, (a, b) => a + b);
+  }
+
+  /// Non-draft documents that land in the rolling 7-day window (same bucketing as the 1W chart).
+  static int countDocumentsRollingSevenDay(
+    List<Map<String, dynamic>> docs,
+    DateTime endDate,
+    WeekSpendBasis basis,
+  ) {
+    final endDay = DateTime(endDate.year, endDate.month, endDate.day);
+    final startDay = endDay.subtract(const Duration(days: 6));
+    var c = 0;
+    for (final doc in docs) {
+      if ((doc['status'] as String?) == 'draft') continue;
+      if (_bucketDayForSevenDayWindowBasis(doc, startDay, endDay, basis) != null) {
+        c++;
+      }
+    }
+    return c;
+  }
 }

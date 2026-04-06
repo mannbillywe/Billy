@@ -10,7 +10,7 @@ class SpendHero extends StatelessWidget {
     super.key,
     required this.weekSpend,
     required this.currencyCode,
-    this.weekSubtitle = 'Receipts & invoices · by upload date (Mon–today)',
+    this.weekSubtitle = 'Receipts & invoices · last 7 days by save date',
     this.documentCountThisWeek,
     this.weeklyData = const [],
     this.lendCollectWeek = const [],
@@ -77,7 +77,7 @@ class SpendHero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'This week',
+                'Last 7 days',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -105,7 +105,7 @@ class SpendHero extends StatelessWidget {
               if (documentCountThisWeek != null) ...[
                 const SizedBox(height: 6),
                 Text(
-                  '${documentCountThisWeek!} ${documentCountThisWeek == 1 ? 'receipt or invoice' : 'receipts & invoices'} in this week (same rules as the total above)',
+                  '${documentCountThisWeek!} ${documentCountThisWeek == 1 ? 'receipt or invoice' : 'receipts & invoices'} in the last 7 days (same rules as the total above)',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
@@ -174,7 +174,7 @@ class SpendHero extends StatelessWidget {
               if (changePct != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  '${isUp ? 'Up' : 'Down'} $changePct% vs last week',
+                  '${isUp ? 'Up' : 'Down'} $changePct% vs prior 7 days',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -187,7 +187,7 @@ class SpendHero extends StatelessWidget {
                 children: [
                   _LegendDot(
                     color: BillyTheme.emerald500,
-                    label: 'Spend · Mon–Sun',
+                    label: 'Spend · 7-day window',
                   ),
                   if (showLendChart) ...[
                     const SizedBox(width: 14),
