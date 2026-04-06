@@ -140,7 +140,7 @@ class GoatHomeTab extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      forecastAsync.hasValue ? 'Safe to spend (model)' : 'Safe to spend',
+                      'Safe to spend',
                       style: TextStyle(
                         color: GoatTokens.textMuted,
                         fontSize: 12,

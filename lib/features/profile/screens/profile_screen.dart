@@ -101,14 +101,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 12),
           _SettingsTile(
             label: 'GOAT access',
-            subtitle: goatEnabled ? 'Enabled — premium workspace available from Home' : 'Disabled',
+            subtitle: goatEnabled
+                ? 'On — open from Home (card or header) for Recurring & Forecast'
+                : 'Off — open GOAT once and tap “Enable GOAT for my account”, or use GOAT → Prefs',
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
                     goatEnabled
-                        ? 'GOAT Mode is enabled for your account. Open it from the Home tab.'
-                        : 'GOAT Mode is not enabled for this account. Ask your Billy operator if you need access.',
+                        ? 'Open GOAT from the Home tab (dark card) or the GOAT chip in the header.'
+                        : 'From Billy: open GOAT (if you see the lock screen, enable there). Inside GOAT, use Prefs to turn the workspace on or off.',
                   ),
                 ),
               );

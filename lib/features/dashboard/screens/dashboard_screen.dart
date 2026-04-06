@@ -10,6 +10,7 @@ import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/utils/document_backdate_hint.dart';
+import '../../goat/widgets/goat_mode_home_cta.dart';
 import '../utils/dashboard_spend_math.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
@@ -26,6 +27,7 @@ class DashboardScreen extends ConsumerWidget {
     this.onCreateBill,
     this.onOpenAllDocuments,
     this.onOpenDocumentDetail,
+    this.onOpenGoatMode,
   });
 
   final VoidCallback? onOpenScan;
@@ -33,6 +35,7 @@ class DashboardScreen extends ConsumerWidget {
   final VoidCallback? onCreateBill;
   final void Function(String documentId)? onOpenDocumentDetail;
   final VoidCallback? onOpenAllDocuments;
+  final VoidCallback? onOpenGoatMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -163,6 +166,7 @@ class DashboardScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
+          if (onOpenGoatMode != null) GoatModeHomeCta(onPressed: onOpenGoatMode!),
           SpendHero(
             weekSpend: weekSpend,
             currencyCode: currency,

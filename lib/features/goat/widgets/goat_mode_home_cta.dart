@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/telemetry/goat_telemetry.dart';
 import '../../../core/theme/goat_theme.dart';
+import '../../../providers/profile_provider.dart';
 import '../goat_profile.dart';
 
-/// Prominent home entry to GOAT Mode (only when [goatAccessProvider] is true).
+/// Prominent Home entry to GOAT (shown once profile loads; [parseProfileGoatAccess] only affects subtitle).
 class GoatModeHomeCta extends ConsumerStatefulWidget {
   const GoatModeHomeCta({super.key, required this.onPressed});
 
@@ -18,13 +19,18 @@ class GoatModeHomeCta extends ConsumerStatefulWidget {
 class _GoatModeHomeCtaState extends ConsumerState<GoatModeHomeCta> {
   @override
   Widget build(BuildContext context) {
-    ref.listen<bool>(goatAccessProvider, (prev, next) {
-      if (next && prev != true) {
+    final profileAsync = ref.watch(profileProvider);
+    final hasProfile = profileAsync.hasValue && profileAsync.valueOrNull != null;
+    ref.listen<AsyncValue<Map<String, dynamic>?>>(profileProvider, (prev, next) {
+      final now = next.hasValue && next.valueOrNull != null;
+      final was = prev?.hasValue == true && prev?.valueOrNull != null;
+      if (now && !was) {
         logGoatEvent('goat_cta_seen');
       }
     });
-    final enabled = ref.watch(goatAccessProvider);
-    if (!enabled) return const SizedBox.shrink();
+    if (!hasProfile) return const SizedBox.shrink();
+
+    final goatOn = parseProfileGoatAccess(profileAsync.valueOrNull);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -93,7 +99,9 @@ class _GoatModeHomeCtaState extends ConsumerState<GoatModeHomeCta> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Control bills, cash flow, and goals',
+                          goatOn
+                              ? 'Bills, recurring, cash-flow forecast'
+                              : 'Tap to open — enable workspace if you see the lock screen',
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.3,

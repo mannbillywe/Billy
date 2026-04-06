@@ -16,6 +16,7 @@ class BillyHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider).valueOrNull;
     final goat = parseProfileGoatAccess(profile);
+    final showGoatEntry = profile != null;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -41,7 +42,7 @@ class BillyHeader extends ConsumerWidget {
               ),
             ),
           ),
-          if (goat) ...[
+          if (showGoatEntry) ...[
             const SizedBox(width: 10),
             Material(
               color: Colors.transparent,
@@ -54,19 +55,28 @@ class BillyHeader extends ConsumerWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        GoatTokens.gold.withValues(alpha: 0.2),
-                        GoatTokens.goldDeep.withValues(alpha: 0.12),
-                      ],
-                    ),
+                    gradient: goat
+                        ? LinearGradient(
+                            colors: [
+                              GoatTokens.gold.withValues(alpha: 0.2),
+                              GoatTokens.goldDeep.withValues(alpha: 0.12),
+                            ],
+                          )
+                        : null,
+                    color: goat ? null : BillyTheme.gray100,
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: GoatTokens.gold.withValues(alpha: 0.35)),
+                    border: Border.all(
+                      color: goat ? GoatTokens.gold.withValues(alpha: 0.35) : BillyTheme.gray300,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.workspace_premium_rounded, size: 16, color: GoatTokens.gold.withValues(alpha: 0.95)),
+                      Icon(
+                        Icons.workspace_premium_rounded,
+                        size: 16,
+                        color: goat ? GoatTokens.gold.withValues(alpha: 0.95) : BillyTheme.gray600,
+                      ),
                       const SizedBox(width: 5),
                       Text(
                         'GOAT',

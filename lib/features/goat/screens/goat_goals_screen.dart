@@ -46,7 +46,7 @@ class GoatGoalsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Define savings targets and auto-allocate from safe-to-spend. Creation flows will land here next.',
+                  'Define savings targets and sinking funds here. Use Forecast for cash-flow and safe-to-spend; goal creation will plug into the same balances soon.',
                   style: TextStyle(color: GoatTokens.textMuted, height: 1.45, fontSize: 13),
                 ),
               ],

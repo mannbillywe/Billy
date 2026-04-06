@@ -6,7 +6,7 @@ import '../../../core/theme/goat_theme.dart';
 import '../../../providers/profile_provider.dart';
 import '../goat_profile.dart';
 import '../widgets/goat_header_banner.dart';
-import 'goat_access_denied_screen.dart';
+import 'goat_profile_gate_screens.dart';
 import 'goat_forecast_screen.dart';
 import 'goat_goals_screen.dart';
 import 'goat_home_tab.dart';
@@ -47,8 +47,14 @@ class _GoatShellScreenState extends ConsumerState<GoatShellScreen> {
           ),
         ),
       ),
-      error: (_, _) => GoatAccessDeniedScreen(onBack: () => Navigator.of(context).maybePop()),
+      error: (e, _) => GoatProfileLoadErrorScreen(
+        onBack: () => Navigator.of(context).maybePop(),
+        detail: e.toString(),
+      ),
       data: (profile) {
+        if (profile == null) {
+          return GoatProfileMissingScreen(onBack: () => Navigator.of(context).maybePop());
+        }
         if (!parseProfileGoatAccess(profile)) {
           return GoatAccessDeniedScreen(onBack: () => Navigator.of(context).maybePop());
         }

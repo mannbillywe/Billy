@@ -109,6 +109,7 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
           onCreateBill: _openAddExpense,
           onOpenAllDocuments: _openDocumentHistory,
           onOpenDocumentDetail: _openDocumentDetail,
+          onOpenGoatMode: _openGoatMode,
         );
       case 1:
         return const AnalyticsScreen();
@@ -123,6 +124,7 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
           onCreateBill: _openAddExpense,
           onOpenAllDocuments: _openDocumentHistory,
           onOpenDocumentDetail: _openDocumentDetail,
+          onOpenGoatMode: _openGoatMode,
         );
     }
   }

@@ -541,13 +541,20 @@ class SupabaseService {
     String? displayName,
     String? avatarUrl,
     String? preferredCurrency,
+    bool? goatAccess,
   }) async {
     if (_uid == null) return;
     final updates = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
     if (displayName != null) updates['display_name'] = displayName;
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
     if (preferredCurrency != null) updates['preferred_currency'] = preferredCurrency;
+    if (goatAccess != null) updates['goat'] = goatAccess;
     await _client.from('profiles').update(updates).eq('id', _uid!);
+  }
+
+  /// Turns GOAT Mode entry points and workspace on or off for the signed-in user (RLS: own row only).
+  static Future<void> setGoatAccess(bool enabled) async {
+    await updateProfile(goatAccess: enabled);
   }
 
   // ─── Social: invitations & connections ───────────────────────────
