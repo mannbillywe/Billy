@@ -28,7 +28,7 @@ class AnalyticsInsightsNotifier extends Notifier<AsyncValue<AnalyticsInsightsRes
     state = AsyncValue.data(parsed);
   }
 
-  /// Manual refresh: one Edge call; at most one Gemini batch per request when [includeAi].
+  /// Manual refresh: one Edge call, or two sequential calls when [includeAi] and the service uses dual AI (coach + JAI).
   /// On failure, restores the previous snapshot and returns an error message for a SnackBar.
   Future<String?> refreshInsights(
     String rangePreset, {

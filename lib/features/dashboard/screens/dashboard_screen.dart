@@ -11,6 +11,8 @@ import '../../documents/utils/document_backdate_hint.dart';
 import '../utils/dashboard_spend_math.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
+import '../../goat/screens/goat_shell_screen.dart';
+import '../../goat/widgets/goat_mode_home_cta.dart';
 import '../widgets/ocr_banner.dart';
 import '../widgets/quick_actions.dart';
 import '../widgets/recent_activity.dart';
@@ -24,6 +26,7 @@ class DashboardScreen extends ConsumerWidget {
     this.onCreateBill,
     this.onOpenAllDocuments,
     this.onOpenDocumentDetail,
+    this.onOpenGoatMode,
   });
 
   final VoidCallback? onOpenScan;
@@ -31,6 +34,7 @@ class DashboardScreen extends ConsumerWidget {
   final VoidCallback? onCreateBill;
   final void Function(String documentId)? onOpenDocumentDetail;
   final VoidCallback? onOpenAllDocuments;
+  final VoidCallback? onOpenGoatMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -134,6 +138,14 @@ class DashboardScreen extends ConsumerWidget {
             friendPendingPay: pendingLb.pay,
             friendAddedThisWeekCollect: addedLb.collect,
             friendAddedThisWeekPay: addedLb.pay,
+          ),
+          GoatModeHomeCta(
+            onPressed: onOpenGoatMode ??
+                () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const GoatShellScreen()),
+                  );
+                },
           ),
           const SizedBox(height: 20),
           Row(

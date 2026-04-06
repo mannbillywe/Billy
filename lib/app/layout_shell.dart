@@ -11,6 +11,7 @@ import '../features/export/models/export_document.dart';
 import '../features/export/screens/export_screen.dart';
 import '../features/lend_borrow/screens/split_screen.dart';
 import '../features/scanner/screens/scan_screen.dart';
+import '../features/goat/screens/goat_shell_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../providers/documents_provider.dart';
 import '../providers/groups_provider.dart';
@@ -93,6 +94,12 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
     );
   }
 
+  void _openGoatMode() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const GoatShellScreen()),
+    );
+  }
+
   Widget _buildContent() {
     switch (_activeTab) {
       case 0:
@@ -102,6 +109,7 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
           onCreateBill: _openAddExpense,
           onOpenAllDocuments: _openDocumentHistory,
           onOpenDocumentDetail: _openDocumentDetail,
+          onOpenGoatMode: _openGoatMode,
         );
       case 1:
         return const AnalyticsScreen();
@@ -116,6 +124,7 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
           onCreateBill: _openAddExpense,
           onOpenAllDocuments: _openDocumentHistory,
           onOpenDocumentDetail: _openDocumentDetail,
+          onOpenGoatMode: _openGoatMode,
         );
     }
   }

@@ -132,7 +132,7 @@ class _AiInsightsPanelState extends ConsumerState<AiInsightsPanel> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Insights are not regenerated automatically. Tap Refresh for updated numbers plus Money Coach and JAI Insight (two model calls per refresh when AI is on; counts toward your monthly refresh limit).',
+                'Insights are not regenerated automatically. Tap Refresh for updated numbers plus Money Coach and JAI Insight (two calls to the same analytics Edge function when AI is on — coach first, then JAI; one Gemini request each; still counts as one manual refresh toward your monthly limit).',
                 style: TextStyle(fontSize: 12, color: BillyTheme.gray600, height: 1.35),
               ),
               const SizedBox(height: 12),

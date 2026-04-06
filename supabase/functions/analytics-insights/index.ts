@@ -1217,6 +1217,39 @@ serve(async (req) => {
       const run = await runRangeAi(keyInfo.key, deterministic, aiAgents);
       ai_layer = run.layer;
       gemini_used = run.gemini_used;
+
+      // Single-agent refreshes merge with the existing snapshot so coach ↔ jai stay paired
+      // when the client calls the Edge Function twice (Money Coach, then JAI).
+      if (
+        ai_layer != null &&
+        (aiAgents === "money_coach" || aiAgents === "jai_insight")
+      ) {
+        const { data: existing } = await supabase
+          .from("analytics_insight_snapshots")
+          .select("ai_layer")
+          .eq("user_id", user.id)
+          .eq("range_preset", rangePreset)
+          .maybeSingle();
+        const prev = existing?.ai_layer as Json | undefined;
+        if (prev && typeof prev === "object" && !Array.isArray(prev)) {
+          const prevCoach = prev["money_coach"] as Json | null | undefined;
+          const prevJai = prev["jai_insight"] as Json | null | undefined;
+          const cur = ai_layer as Json;
+          const newCoach = cur["money_coach"] as Json | null | undefined;
+          const newJai = cur["jai_insight"] as Json | null | undefined;
+          if (aiAgents === "money_coach") {
+            ai_layer = mergeAiLayer(
+              (newCoach ?? null) as Json | null,
+              (prevJai ?? null) as Json | null,
+            );
+          } else {
+            ai_layer = mergeAiLayer(
+              (prevCoach ?? null) as Json | null,
+              (newJai ?? null) as Json | null,
+            );
+          }
+        }
+      }
     }
   }
 

@@ -70,15 +70,44 @@ class AnalyticsInsightsService {
     bool includeAi = true,
     InsightsDateBasis dateBasis = InsightsDateBasis.billDate,
     /// `both` | `money_coach` | `jai_insight` — matches Edge Function `ai_agents`.
+    /// When `both`, invokes the same Edge Function twice (Money Coach, then JAI) so each
+    /// agent gets its own request; the server merges `ai_layer` into one snapshot.
     String aiAgents = 'both',
   }) async {
-    final raw = await _invoke({
+    final basis = dateBasis.apiValue;
+    if (!includeAi || aiAgents != 'both') {
+      final raw = await _invoke({
+        'range_preset': rangePreset,
+        'include_ai': includeAi,
+        'ai_agents': aiAgents,
+        'date_basis': basis,
+      });
+      return AnalyticsInsightsResult.fromInvokeResponse(raw);
+    }
+
+    final coachRaw = await _invoke({
       'range_preset': rangePreset,
-      'include_ai': includeAi,
-      'ai_agents': aiAgents,
-      'date_basis': dateBasis.apiValue,
+      'include_ai': true,
+      'ai_agents': 'money_coach',
+      'date_basis': basis,
     });
-    return AnalyticsInsightsResult.fromInvokeResponse(raw);
+    final coachResult = AnalyticsInsightsResult.fromInvokeResponse(coachRaw);
+    if (!coachResult.success) return coachResult;
+
+    try {
+      final jaiRaw = await _invoke({
+        'range_preset': rangePreset,
+        'include_ai': true,
+        'ai_agents': 'jai_insight',
+        'date_basis': basis,
+      });
+      final jaiResult = AnalyticsInsightsResult.fromInvokeResponse(jaiRaw);
+      if (!jaiResult.success) return coachResult;
+      // Second response includes merged coach + new JAI from the Edge merge step.
+      return jaiResult;
+    } catch (_) {
+      return coachResult;
+    }
   }
 
   static Future<AnalyticsInsightsResult> reviewDocument({

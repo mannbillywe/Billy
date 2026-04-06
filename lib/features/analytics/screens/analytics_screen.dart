@@ -7,7 +7,15 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../documents/screens/documents_history_screen.dart';
 import '../widgets/ai_insights_panel.dart';
+
+/// Category bucket for Analytics Overview (must match aggregation and drill-down).
+String analyticsCategoryBucket(Map<String, dynamic> d) {
+  final parts = (d['description'] as String?)?.split(',');
+  final first = parts != null && parts.isNotEmpty ? parts.first.trim() : '';
+  return first.isNotEmpty ? first : 'Other';
+}
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -32,11 +40,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     double totalExpenses = 0;
     final catMap = <String, double>{};
+    final categoryDocIds = <String, Set<String>>{};
     for (final d in filtered) {
       final amount = (d['amount'] as num?)?.toDouble() ?? 0;
-      final desc = (d['description'] as String?)?.split(',').first.trim() ?? 'Other';
+      final bucket = analyticsCategoryBucket(d);
       totalExpenses += amount;
-      catMap[desc] = (catMap[desc] ?? 0) + amount;
+      catMap[bucket] = (catMap[bucket] ?? 0) + amount;
+      final id = d['id'] as String?;
+      if (id != null && id.isNotEmpty) {
+        categoryDocIds.putIfAbsent(bucket, () => <String>{}).add(id);
+      }
     }
     final sortedCats = catMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
 
@@ -113,7 +126,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            _TopCategoriesList(categories: sortedCats, totalExpenses: totalExpenses, currencyCode: currency),
+            _TopCategoriesList(
+              categories: sortedCats,
+              totalExpenses: totalExpenses,
+              currencyCode: currency,
+              categoryDocumentIds: categoryDocIds,
+            ),
           ] else
             AiInsightsPanel(rangePreset: _dateFilter),
         ],
@@ -351,11 +369,14 @@ class _TopCategoriesList extends StatelessWidget {
   const _TopCategoriesList({
     required this.categories,
     required this.totalExpenses,
+    required this.categoryDocumentIds,
     this.currencyCode,
   });
   final List<MapEntry<String, double>> categories;
   final double totalExpenses;
   final String? currencyCode;
+  /// Same keys as [categories] — document ids in that bucket for drill-down.
+  final Map<String, Set<String>> categoryDocumentIds;
 
   static const _icons = ['🛍️', '🍔', '⚡', '🚗', '🎬', '💊'];
   static const _colors = [
@@ -398,64 +419,105 @@ class _TopCategoriesList extends StatelessWidget {
               Text('Top categories', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 4),
+          Text(
+            'Tap a row to open bills in that category',
+            style: TextStyle(fontSize: 11, color: BillyTheme.gray500.withValues(alpha: 0.9)),
+          ),
+          const SizedBox(height: 16),
           ...items.asMap().entries.map((e) {
             final cat = e.value;
             final pct = totalExpenses > 0 ? ((cat.value / totalExpenses) * 100).round() : 0;
             final icon = _icons[e.key % _icons.length];
             final color = _colors[e.key % _colors.length];
+            final ids = categoryDocumentIds[cat.key];
 
             return Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(color: BillyTheme.gray50, borderRadius: BorderRadius.circular(12)),
-                    alignment: Alignment.center,
-                    child: Text(icon, style: const TextStyle(fontSize: 18)),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(cat.key, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: BillyTheme.gray800)),
-                            Text(
-                              AppCurrency.format(cat.value, currencyCode),
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: 6,
-                                decoration: BoxDecoration(color: BillyTheme.gray100, borderRadius: BorderRadius.circular(3)),
-                                child: FractionallySizedBox(
-                                  alignment: Alignment.centerLeft,
-                                  widthFactor: pct / 100,
-                                  child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
-                                ),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: ids == null || ids.isEmpty
+                      ? null
+                      : () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => DocumentsHistoryScreen(
+                                restrictToDocumentIds: ids,
+                                restrictContextTitle: cat.key,
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            SizedBox(
-                              width: 30,
-                              child: Text('$pct%', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
-                            ),
-                          ],
+                          );
+                        },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(color: BillyTheme.gray50, borderRadius: BorderRadius.circular(12)),
+                          alignment: Alignment.center,
+                          child: Text(icon, style: const TextStyle(fontSize: 18)),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      cat.key,
+                                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: BillyTheme.gray800),
+                                    ),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        AppCurrency.format(cat.value, currencyCode),
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
+                                      ),
+                                      if (ids != null && ids.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        Icon(Icons.chevron_right, size: 18, color: BillyTheme.gray400),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Container(
+                                      height: 6,
+                                      decoration: BoxDecoration(color: BillyTheme.gray100, borderRadius: BorderRadius.circular(3)),
+                                      child: FractionallySizedBox(
+                                        alignment: Alignment.centerLeft,
+                                        widthFactor: pct / 100,
+                                        child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  SizedBox(
+                                    width: 30,
+                                    child: Text('$pct%', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             );
           }),

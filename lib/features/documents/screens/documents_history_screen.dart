@@ -12,10 +12,13 @@ import 'document_detail_screen.dart';
 
 /// Full list of saved documents with search, filters, and sort.
 class DocumentsHistoryScreen extends ConsumerStatefulWidget {
-  const DocumentsHistoryScreen({super.key, this.restrictToDocumentIds});
+  const DocumentsHistoryScreen({super.key, this.restrictToDocumentIds, this.restrictContextTitle});
 
   /// When non-empty, only these rows are shown (e.g. insight drill-down).
   final Set<String>? restrictToDocumentIds;
+
+  /// Optional AppBar title when [restrictToDocumentIds] is set (e.g. category name).
+  final String? restrictContextTitle;
 
   @override
   ConsumerState<DocumentsHistoryScreen> createState() => _DocumentsHistoryScreenState();
@@ -228,9 +231,11 @@ class _DocumentsHistoryScreenState extends ConsumerState<DocumentsHistoryScreen>
       backgroundColor: BillyTheme.scaffoldBg,
       appBar: AppBar(
         title: Text(
-          widget.restrictToDocumentIds != null && widget.restrictToDocumentIds!.isNotEmpty
-              ? 'Matching documents'
-              : 'All documents',
+          widget.restrictContextTitle != null && widget.restrictContextTitle!.trim().isNotEmpty
+              ? widget.restrictContextTitle!.trim()
+              : widget.restrictToDocumentIds != null && widget.restrictToDocumentIds!.isNotEmpty
+                  ? 'Matching documents'
+                  : 'All documents',
         ),
         backgroundColor: BillyTheme.scaffoldBg,
         foregroundColor: BillyTheme.gray800,
