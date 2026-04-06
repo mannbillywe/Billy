@@ -34,8 +34,9 @@ if ($env:SENTRY_DSN) {
     $envDefines += "--dart-define=SENTRY_DSN=$($env:SENTRY_DSN)"
     Write-Host "Using SENTRY_DSN from environment" -ForegroundColor Gray
 }
-# --pwa-strategy=none: avoid service worker serving stale JS (old Edge function names / broken scan on iOS).
-& flutter build web --release @defineArgs @envDefines --pwa-strategy=none
+# --no-wasm-dry-run: quieter CI/local logs (Flutter 3.27+ wasm dry run notice).
+# Avoid deploying from web/ without a build — see README.md (Vercel section).
+& flutter build web --release @defineArgs @envDefines --no-wasm-dry-run
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # SPA fallback for Flutter web client routing

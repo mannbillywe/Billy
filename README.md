@@ -4,6 +4,8 @@ Flutter app (Android, iOS, Web) for managing invoices, receipts, and expenses wi
 
 ## Deploy to Vercel (Web)
 
+**Important:** Deploy **only** via `scripts/deploy-vercel.ps1` (or the same steps manually: `flutter build web` → copy `web/vercel.json` and `web/api/` into `build/web` → `vercel deploy` **from `build/web`**). Running `vercel deploy` from the `web/` folder uploads **templates only** (no compiled Dart), so the site will be blank.
+
 1. **Prerequisites**
    - Flutter SDK installed
    - Node.js (for Vercel CLI)
