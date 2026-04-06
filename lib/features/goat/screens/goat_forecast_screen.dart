@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/goat_theme.dart';
 import '../../../providers/goat_cash_providers.dart';
+import '../../../providers/goat_goals_providers.dart';
+import '../../../providers/goat_lens_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../finance/cashflow_engine.dart';
 import '../finance/finance_repository.dart';
@@ -28,8 +30,10 @@ class _GoatForecastScreenState extends ConsumerState<GoatForecastScreen> {
   @override
   Widget build(BuildContext context) {
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'INR';
+    final analysisLens = ref.watch(goatAnalysisLensProvider);
     final horizon = ref.watch(goatForecastHorizonProvider);
     final forecast = ref.watch(goatForecastProvider);
+    final goalsSummary = ref.watch(goatGoalsSummaryProvider);
     final reservePaise = ref.watch(forecastReserveProvider);
     final whatIfPaise = ref.watch(whatIfSpendTodayProvider);
 
@@ -44,6 +48,9 @@ class _GoatForecastScreenState extends ConsumerState<GoatForecastScreen> {
         ref.invalidate(financialAccountsProvider);
         ref.invalidate(incomeStreamsProvider);
         ref.invalidate(plannedCashEventsProvider);
+        ref.invalidate(goatGoalsProvider);
+        ref.invalidate(goatGoalsSummaryProvider);
+        ref.invalidate(goatGoalsForecastInputProvider);
         ref.invalidate(goatForecastProvider);
       },
       child: CustomScrollView(
@@ -64,6 +71,11 @@ class _GoatForecastScreenState extends ConsumerState<GoatForecastScreen> {
                 Text(
                   'Safe-to-spend & cash-flow (deterministic)',
                   style: TextStyle(color: GoatTokens.textMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Analysis lens: ${analysisLens.label} — modeled from accounts, recurring, income, planned events, and goal hard-reserve. Statement imports feed GOAT Statements & Smart totals; they do not replace this engine yet.',
+                  style: TextStyle(color: GoatTokens.textMuted, fontSize: 10, height: 1.35),
                 ),
                 const SizedBox(height: 16),
                 Wrap(
@@ -159,6 +171,20 @@ class _GoatForecastScreenState extends ConsumerState<GoatForecastScreen> {
                                   style: TextStyle(color: GoatTokens.textMuted, fontSize: 11),
                                 ),
                               ),
+                            goalsSummary.when(
+                              data: (gs) {
+                                if (gs.softReserveMonthlyMinor <= 0) return const SizedBox.shrink();
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: Text(
+                                    'Goals (soft reserve, informational): ${AppCurrency.format(CashflowMoneyLine.fromMinor(gs.softReserveMonthlyMinor), currency)}/mo in planned pace — not subtracted from safe-to-spend.',
+                                    style: TextStyle(color: GoatTokens.textMuted, fontSize: 11, height: 1.35),
+                                  ),
+                                );
+                              },
+                              loading: () => const SizedBox.shrink(),
+                              error: (e, st) => const SizedBox.shrink(),
+                            ),
                           ],
                         ),
                       ),
@@ -318,6 +344,8 @@ class _GoatForecastScreenState extends ConsumerState<GoatForecastScreen> {
         return raw == 0 ? fmt : '−$fmt';
       case 'breakdown_add':
         return raw == 0 ? fmt : '+$fmt';
+      case 'breakdown_note':
+        return '—';
       default:
         return AppCurrency.format(raw, currency);
     }

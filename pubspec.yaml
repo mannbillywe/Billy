@@ -63,6 +63,11 @@ dependencies:
   uuid: ^4.5.3
   fetch_client: ^1.2.0
   http: ^1.2.2
+  archive: 4.0.7
+  pdfrx: ^2.2.24
+  crypto: ^3.0.7
+  xml: 6.5.0
+  flutter_dropzone: ^4.2.1
 
 dev_dependencies:
   flutter_test:

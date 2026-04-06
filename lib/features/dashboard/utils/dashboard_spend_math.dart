@@ -107,7 +107,7 @@ class DashboardSpendMath {
     }
   }
 
-  /// Count of non-draft documents attributed to this week (same rules as [thisWeekDocumentSpend]).
+  /// Count of non-draft documents in the **calendar** ISO week (same rules as [thisWeekDocumentSpend]).
   static int thisWeekDocumentCount(
     List<Map<String, dynamic>> docs, [
     DateTime? now,

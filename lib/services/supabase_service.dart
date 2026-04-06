@@ -18,6 +18,16 @@ class SupabaseService {
     return s.contains('PGRST204') && s.contains('category_source');
   }
 
+  static bool _isMissingExcludeFromGoatSmartColumnError(Object e) {
+    if (e is PostgrestException) {
+      return e.code == 'PGRST204' &&
+          e.message.contains('exclude_from_goat_smart_analytics') &&
+          e.message.contains('documents');
+    }
+    final s = e.toString();
+    return s.contains('PGRST204') && s.contains('exclude_from_goat_smart_analytics');
+  }
+
   /// Remote DB may not have `lend_borrow_entries.document_id` migration yet (PGRST204).
   static bool _isMissingLendBorrowDocumentIdColumnError(Object e) {
     if (e is PostgrestException) {
@@ -142,6 +152,7 @@ class SupabaseService {
     String? categoryId,
     String? categorySource,
     bool writeCategorySource = false,
+    bool? excludeFromGoatSmartAnalytics,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
@@ -162,9 +173,18 @@ class SupabaseService {
     if (writeCategorySource) {
       updates['category_source'] = categorySource;
     }
+    if (excludeFromGoatSmartAnalytics != null) {
+      updates['exclude_from_goat_smart_analytics'] = excludeFromGoatSmartAnalytics;
+    }
     try {
       await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
     } catch (e) {
+      if (updates.containsKey('exclude_from_goat_smart_analytics') &&
+          _isMissingExcludeFromGoatSmartColumnError(e)) {
+        updates.remove('exclude_from_goat_smart_analytics');
+        await _client.from('documents').update(updates).eq('id', id).eq('user_id', uid);
+        return;
+      }
       if (writeCategorySource &&
           updates.containsKey('category_source') &&
           _isMissingCategorySourceColumnError(e)) {
@@ -542,6 +562,8 @@ class SupabaseService {
     String? avatarUrl,
     String? preferredCurrency,
     bool? goatAccess,
+    /// GOAT analysis lens: smart | statements_only | ocr_only | combined_raw
+    String? goatAnalysisLens,
   }) async {
     if (_uid == null) return;
     final updates = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
@@ -549,7 +571,29 @@ class SupabaseService {
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
     if (preferredCurrency != null) updates['preferred_currency'] = preferredCurrency;
     if (goatAccess != null) updates['goat'] = goatAccess;
-    await _client.from('profiles').update(updates).eq('id', _uid!);
+    if (goatAnalysisLens != null && goatAnalysisLens.isNotEmpty) {
+      updates['goat_analysis_lens'] = goatAnalysisLens;
+    }
+    try {
+      await _client.from('profiles').update(updates).eq('id', _uid!);
+    } catch (e) {
+      if (goatAnalysisLens != null && _isMissingGoatAnalysisLensColumnError(e)) {
+        updates.remove('goat_analysis_lens');
+        if (updates.length > 1) {
+          await _client.from('profiles').update(updates).eq('id', _uid!);
+        }
+      } else {
+        rethrow;
+      }
+    }
+  }
+
+  static bool _isMissingGoatAnalysisLensColumnError(Object e) {
+    if (e is PostgrestException) {
+      return e.code == 'PGRST204' && e.message.contains('goat_analysis_lens');
+    }
+    final s = e.toString();
+    return s.contains('PGRST204') && s.contains('goat_analysis_lens');
   }
 
   /// Turns GOAT Mode entry points and workspace on or off for the signed-in user (RLS: own row only).

@@ -2,7 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/goat/finance/cashflow_engine.dart';
 import '../features/goat/finance/finance_repository.dart';
+import '../features/goat/goals/goal_engine.dart';
 import '../features/goat/recurring/recurring_repository.dart';
+import '../features/goat/statements/goat_analysis_lens.dart';
+import '../features/goat/statements/statement_repository.dart';
+import 'goat_goals_providers.dart';
+import 'goat_lens_provider.dart';
 
 /// Recurring series + near-future occurrences (GOAT Recurring + Forecast input).
 class GoatRecurringBundleNotifier extends AsyncNotifier<({List<Map<String, dynamic>> series, List<Map<String, dynamic>> occ})> {
@@ -65,6 +70,7 @@ final whatIfSpendTodayProvider = NotifierProvider<WhatIfSpendTodayNotifier, int>
 
 /// Deterministic forecast from DB (accounts, recurring, income, planned).
 final goatForecastProvider = FutureProvider<CashflowForecastResult>((ref) async {
+  final lens = ref.watch(goatAnalysisLensProvider);
   final bundle = await ref.watch(goatRecurringBundleProvider.future);
   final reserve = ref.watch(forecastReserveProvider);
   final horizon = ref.watch(goatForecastHorizonProvider);
@@ -73,6 +79,32 @@ final goatForecastProvider = FutureProvider<CashflowForecastResult>((ref) async 
   final accounts = await FinanceRepository.fetchAccounts();
   final income = await FinanceRepository.fetchIncomeStreams();
   final planned = await FinanceRepository.fetchPlannedEvents();
+
+  final goalsInput = await ref.watch(goatGoalsForecastInputProvider.future);
+  final goalsHard = GoalEngine.totalHardReserveMonthlyMinor(goalsInput.activeGoals, goalsInput.rulesByGoalId);
+
+  List<StatementForecastDebit> stmtDebits = const [];
+  if (lens == GoatAnalysisLens.statementsOnly) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final end = today.add(Duration(days: horizon));
+    final rows = await StatementRepository.fetchDebitTransactionsInDateRange(fromInclusive: today, toInclusive: end);
+    stmtDebits = rows
+        .map((t) {
+          final raw = t['txn_date']?.toString();
+          final d = DateTime.tryParse(raw ?? '') ?? today;
+          final day = DateTime(d.year, d.month, d.day);
+          final amt = (t['amount'] as num?)?.toDouble() ?? 0;
+          final lab = (t['description_raw'] as String?)?.trim() ?? '';
+          return StatementForecastDebit(
+            date: day,
+            minor: CashflowMoneyLine.toMinor(amt),
+            label: lab.isEmpty ? 'Statement debit' : lab,
+          );
+        })
+        .where((e) => e.minor > 0)
+        .toList();
+  }
 
   return CashflowEngine.compute(
     horizonDays: horizon,
@@ -83,6 +115,8 @@ final goatForecastProvider = FutureProvider<CashflowForecastResult>((ref) async 
     plannedEvents: planned,
     reserveMinor: reserve,
     whatIfExtraOutflowTodayMinor: whatIf,
+    goalsHardReserveMonthlyMinor: goalsHard,
+    statementDebitsInHorizon: stmtDebits,
   );
 });
 

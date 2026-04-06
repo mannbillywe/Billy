@@ -38,6 +38,16 @@ class CashflowDay {
   final List<CashflowMoneyLine> lines;
 }
 
+/// Debit dated inside the forecast horizon from imported statements (Statements-only lens).
+@immutable
+class StatementForecastDebit {
+  const StatementForecastDebit({required this.date, required this.minor, required this.label});
+
+  final DateTime date;
+  final int minor;
+  final String label;
+}
+
 @immutable
 class CashflowForecastResult {
   const CashflowForecastResult({
@@ -100,6 +110,10 @@ class CashflowEngine {
     required List<Map<String, dynamic>> plannedEvents,
     int reserveMinor = 0,
     int whatIfExtraOutflowTodayMinor = 0,
+    /// Active goals with [forecast_reserve] = hard: monthly commitment (minor units) reduces safe-to-spend.
+    int goalsHardReserveMonthlyMinor = 0,
+    /// When using Statements-only lens, add these debits on their dates (deterministic; may overlap recurring).
+    List<StatementForecastDebit> statementDebitsInHorizon = const [],
     DateTime? now,
   }) {
     final today = _dOnly(now ?? DateTime.now());
@@ -210,6 +224,15 @@ class CashflowEngine {
       }
     }
 
+    for (final s in statementDebitsInHorizon) {
+      final dd = _dOnly(s.date);
+      if (dd.isBefore(today) || dd.isAfter(end)) continue;
+      if (s.minor <= 0) continue;
+      final lab = s.label.trim();
+      final short = lab.length > 40 ? '${lab.substring(0, 37)}…' : lab;
+      addEv(dd, CashflowMoneyLine(label: short.isEmpty ? 'Statement' : short, minor: s.minor, kind: 'statement_horizon'));
+    }
+
     final sortedDays = <DateTime>[];
     for (var i = 0; i <= end.difference(today).inDays; i++) {
       sortedDays.add(today.add(Duration(days: i)));
@@ -263,7 +286,7 @@ class CashflowEngine {
       }
     }
 
-    final safeNow = liquid - reserveMinor - dueOut + dueIn;
+    final safeNow = liquid - reserveMinor - goalsHardReserveMonthlyMinor - dueOut + dueIn;
 
     final sevenEnd = today.add(const Duration(days: 7));
     int dueOut7 = 0;
@@ -279,18 +302,25 @@ class CashflowEngine {
         }
       }
     }
-    final safe7 = liquid - reserveMinor - dueOut7 + dueIn7;
+    final safe7 = liquid - reserveMinor - goalsHardReserveMonthlyMinor - dueOut7 + dueIn7;
 
     String risk = 'low';
     if (minClose < 0 || safeNow < 0) {
       risk = 'high';
-    } else if (minClose < reserveMinor || safeNow < CashflowMoneyLine.toMinor(500)) {
+    } else if (minClose < reserveMinor + goalsHardReserveMonthlyMinor ||
+        safeNow < CashflowMoneyLine.toMinor(500)) {
       risk = 'medium';
     }
 
     final breakdown = <CashflowMoneyLine>[
       CashflowMoneyLine(label: 'Liquid balances (included accounts)', minor: liquid, kind: 'breakdown_base'),
       CashflowMoneyLine(label: 'Reserve / buffer held back', minor: reserveMinor, kind: 'breakdown_sub'),
+      if (goalsHardReserveMonthlyMinor > 0)
+        CashflowMoneyLine(
+          label: 'Goals (hard reserve — monthly commitment)',
+          minor: goalsHardReserveMonthlyMinor,
+          kind: 'breakdown_sub',
+        ),
       CashflowMoneyLine(
         label: 'Committed outflows until ${_ymd(anchor)}',
         minor: dueOut,
@@ -301,6 +331,12 @@ class CashflowEngine {
         minor: dueIn,
         kind: 'breakdown_add',
       ),
+      if (statementDebitsInHorizon.isNotEmpty)
+        CashflowMoneyLine(
+          label: 'Note: committed outflows include imported statement debits dated in this horizon (Statements lens).',
+          minor: 0,
+          kind: 'breakdown_note',
+        ),
     ];
 
     DateTime? lowestBalanceDate;

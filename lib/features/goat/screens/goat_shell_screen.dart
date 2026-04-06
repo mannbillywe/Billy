@@ -5,6 +5,7 @@ import '../../../core/telemetry/goat_telemetry.dart';
 import '../../../core/theme/goat_theme.dart';
 import '../../../providers/profile_provider.dart';
 import '../goat_profile.dart';
+import '../widgets/goat_analysis_lens_bar.dart';
 import '../widgets/goat_header_banner.dart';
 import 'goat_profile_gate_screens.dart';
 import 'goat_forecast_screen.dart';
@@ -73,6 +74,7 @@ class _GoatShellScreenState extends ConsumerState<GoatShellScreen> {
             body: Column(
               children: [
                 GoatHeaderBanner(onExit: () => Navigator.of(context).maybePop()),
+                const GoatAnalysisLensBar(),
                 Expanded(
                   child: IndexedStack(
                     index: _tab,

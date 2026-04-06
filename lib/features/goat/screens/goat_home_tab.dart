@@ -6,11 +6,14 @@ import '../../../core/theme/goat_theme.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/goat_cash_providers.dart';
+import '../../../providers/goat_goals_providers.dart';
+import '../../../providers/goat_statements_providers.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
 import '../finance/cashflow_engine.dart';
 import '../utils/goat_dashboard_helpers.dart';
 import '../widgets/goat_chip.dart';
+import '../statements/screens/goat_statements_hub_screen.dart';
 import '../widgets/goat_premium_card.dart';
 
 class GoatHomeTab extends ConsumerWidget {
@@ -58,13 +61,19 @@ class GoatHomeTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final docsAsync = ref.watch(documentsProvider);
     final forecastAsync = ref.watch(goatForecastProvider);
+    final goalsSummaryAsync = ref.watch(goatGoalsSummaryProvider);
+    final lensWeekSpendAsync = ref.watch(goatLensWeekDebitSpendProvider);
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'USD';
     final weekBasis = ref.watch(weekSpendBasisProvider);
     final all = docsAsync.valueOrNull ?? [];
     final loading = docsAsync.isLoading && docsAsync.value == null;
 
     final upcoming = upcomingDocumentsWithinDays(all, daysAhead: 14);
-    final weekSpend = spendLastDaysByBasis(all, 7, weekBasis);
+    final docWeekSpend = spendLastDaysByBasis(all, 7, weekBasis);
+    final weekSpend = lensWeekSpendAsync.maybeWhen(
+      data: (v) => v,
+      orElse: () => docWeekSpend,
+    );
     final daily = weekSpend / 7;
     final risk = cashFlowRiskFromDocumentsByBasis(all, weekBasis);
     final roughBuffer = (daily * 2).clamp(0.0, 1e12);
@@ -239,6 +248,37 @@ class GoatHomeTab extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
+          GoatPremiumCard(
+            padding: const EdgeInsets.all(14),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const GoatStatementsHubScreen()),
+              );
+            },
+            child: Row(
+              children: [
+                Icon(Icons.description_outlined, color: GoatTokens.gold.withValues(alpha: 0.95), size: 28),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Statements', style: TextStyle(color: GoatTokens.textMuted, fontSize: 11)),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Import bank & card files',
+                        style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w800, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('PDF · CSV · XLSX · dedupe vs receipts', style: TextStyle(color: GoatTokens.textMuted, fontSize: 10)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: GoatTokens.textMuted),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -282,7 +322,7 @@ class GoatHomeTab extends ConsumerWidget {
                       Text('Goals', style: TextStyle(color: GoatTokens.textMuted, fontSize: 11)),
                       const SizedBox(height: 6),
                       Text(
-                        '0 active',
+                        '${goalsSummaryAsync.maybeWhen(data: (s) => s.activeCount, orElse: () => 0)} active',
                         style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w800, fontSize: 18),
                       ),
                       const SizedBox(height: 4),
@@ -382,6 +422,14 @@ class GoatHomeTab extends ConsumerWidget {
               GoatChip(label: 'Add income', onTap: () => onNavigateToModule(2)),
               GoatChip(label: 'Add goal', onTap: () => onNavigateToModule(3)),
               GoatChip(label: 'Review forecast', onTap: () => onNavigateToModule(2)),
+              GoatChip(
+                label: 'Statements',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const GoatStatementsHubScreen()),
+                  );
+                },
+              ),
             ],
           ),
         ],
