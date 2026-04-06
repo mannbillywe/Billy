@@ -10,6 +10,7 @@ class SpendHero extends StatelessWidget {
     super.key,
     required this.weekSpend,
     required this.currencyCode,
+    this.weekSubtitle = 'Receipts & invoices · by upload date (Mon–today)',
     this.weeklyData = const [],
     this.lendCollectWeek = const [],
     this.lendPayWeek = const [],
@@ -22,6 +23,8 @@ class SpendHero extends StatelessWidget {
 
   final double weekSpend;
   final String? currencyCode;
+  /// Explains how this week is bucketed (upload vs bill date).
+  final String weekSubtitle;
   final List<double> weeklyData;
   /// Mon–Sun pending IOUs created that day (collect / lent side), viewer perspective.
   final List<double> lendCollectWeek;
@@ -89,7 +92,7 @@ class SpendHero extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Receipts & invoices · Mon–today',
+                weekSubtitle,
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w500,

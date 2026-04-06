@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/telemetry/goat_telemetry.dart';
 import '../../core/theme/billy_theme.dart';
+import '../../core/theme/goat_theme.dart';
+import '../../features/goat/goat_profile.dart';
+import '../../providers/profile_provider.dart';
 
-class BillyHeader extends StatelessWidget {
-  const BillyHeader({super.key});
+class BillyHeader extends ConsumerWidget {
+  const BillyHeader({super.key, required this.onOpenGoatMode});
+
+  final VoidCallback onOpenGoatMode;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileProvider).valueOrNull;
+    final goat = parseProfileGoatAccess(profile);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       color: BillyTheme.scaffoldBg,
@@ -19,7 +29,7 @@ class BillyHeader extends StatelessWidget {
               height: 48,
               width: 48,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
+              errorBuilder: (context, error, stackTrace) => Container(
                 height: 48,
                 width: 48,
                 decoration: BoxDecoration(
@@ -31,6 +41,48 @@ class BillyHeader extends StatelessWidget {
               ),
             ),
           ),
+          if (goat) ...[
+            const SizedBox(width: 10),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  logGoatEvent('goat_header_chip_clicked');
+                  onOpenGoatMode();
+                },
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        GoatTokens.gold.withValues(alpha: 0.2),
+                        GoatTokens.goldDeep.withValues(alpha: 0.12),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: GoatTokens.gold.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.workspace_premium_rounded, size: 16, color: GoatTokens.gold.withValues(alpha: 0.95)),
+                      const SizedBox(width: 5),
+                      Text(
+                        'GOAT',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                          color: BillyTheme.gray800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(width: 12),
           Expanded(
             child: Column(

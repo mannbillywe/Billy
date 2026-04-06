@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/goat_theme.dart';
+import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/week_spend_basis_provider.dart';
 import '../utils/goat_dashboard_helpers.dart';
 import '../widgets/goat_chip.dart';
 import '../widgets/goat_premium_card.dart';
@@ -30,13 +32,14 @@ class GoatHomeTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final docsAsync = ref.watch(documentsProvider);
     final currency = ref.watch(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'USD';
+    final weekBasis = ref.watch(weekSpendBasisProvider);
     final all = docsAsync.valueOrNull ?? [];
     final loading = docsAsync.isLoading && docsAsync.value == null;
 
     final upcoming = upcomingDocumentsWithinDays(all, daysAhead: 14);
-    final weekSpend = spendLastDays(all, 7);
+    final weekSpend = spendLastDaysByBasis(all, 7, weekBasis);
     final daily = weekSpend / 7;
-    final risk = cashFlowRiskFromDocuments(all);
+    final risk = cashFlowRiskFromDocumentsByBasis(all, weekBasis);
     final roughBuffer = (daily * 2).clamp(0.0, 1e12);
 
     return SingleChildScrollView(
@@ -53,6 +56,42 @@ class GoatHomeTab extends ConsumerWidget {
                 backgroundColor: GoatTokens.surfaceElevated,
               ),
             ),
+          Text(
+            '7-day spend basis',
+            style: TextStyle(color: GoatTokens.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          SegmentedButton<WeekSpendBasis>(
+            segments: const [
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.uploadDate,
+                label: Text('Upload'),
+                icon: Icon(Icons.cloud_upload_outlined, size: 16),
+              ),
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.invoiceDate,
+                label: Text('Bill date'),
+                icon: Icon(Icons.receipt_long_outlined, size: 16),
+              ),
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.hybrid,
+                label: Text('Both'),
+                icon: Icon(Icons.merge_type_outlined, size: 16),
+              ),
+            ],
+            selected: {weekBasis},
+            onSelectionChanged: (next) {
+              ref.read(weekSpendBasisProvider.notifier).setBasis(next.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) return GoatTokens.gold;
+                return GoatTokens.textMuted;
+              }),
+            ),
+          ),
+          const SizedBox(height: 16),
           Text(
             'Command center',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(

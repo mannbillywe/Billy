@@ -8,6 +8,15 @@ import '../../../config/supabase_config.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../models/analytics_insights_models.dart';
 
+/// Maps to Edge `gemini_scope`. [goat] is honored only when `profiles.goat` is true.
+enum AnalyticsGeminiScope {
+  /// Main Billy key chain (GEMINI_API_KEY / app_api_keys.gemini).
+  billy,
+
+  /// Dedicated GOAT key chain when configured (else server uses Billy chain).
+  goat,
+}
+
 /// Invokes `analytics-insights` (Supabase Edge or Vercel `/api` proxy on hosted web).
 class AnalyticsInsightsService {
   AnalyticsInsightsService._();
@@ -17,6 +26,16 @@ class AnalyticsInsightsService {
       Uri.base.hasScheme &&
       !Uri.base.host.contains('localhost') &&
       !Uri.base.host.startsWith('127.');
+
+  static Map<String, dynamic> _withGeminiScope(
+    Map<String, dynamic> body,
+    AnalyticsGeminiScope geminiScope,
+  ) {
+    if (geminiScope == AnalyticsGeminiScope.goat) {
+      return {...body, 'gemini_scope': 'goat'};
+    }
+    return body;
+  }
 
   static Future<Map<String, dynamic>> _invoke(Map<String, dynamic> body) async {
     final client = Supabase.instance.client;
@@ -69,6 +88,7 @@ class AnalyticsInsightsService {
     required String rangePreset,
     bool includeAi = true,
     InsightsDateBasis dateBasis = InsightsDateBasis.billDate,
+    AnalyticsGeminiScope geminiScope = AnalyticsGeminiScope.billy,
     /// `both` | `money_coach` | `jai_insight` — matches Edge Function `ai_agents`.
     /// When `both`, invokes the same Edge Function twice (Money Coach, then JAI) so each
     /// agent gets its own request; the server merges `ai_layer` into one snapshot.
@@ -76,31 +96,31 @@ class AnalyticsInsightsService {
   }) async {
     final basis = dateBasis.apiValue;
     if (!includeAi || aiAgents != 'both') {
-      final raw = await _invoke({
+      final raw = await _invoke(_withGeminiScope({
         'range_preset': rangePreset,
         'include_ai': includeAi,
         'ai_agents': aiAgents,
         'date_basis': basis,
-      });
+      }, geminiScope));
       return AnalyticsInsightsResult.fromInvokeResponse(raw);
     }
 
-    final coachRaw = await _invoke({
+    final coachRaw = await _invoke(_withGeminiScope({
       'range_preset': rangePreset,
       'include_ai': true,
       'ai_agents': 'money_coach',
       'date_basis': basis,
-    });
+    }, geminiScope));
     final coachResult = AnalyticsInsightsResult.fromInvokeResponse(coachRaw);
     if (!coachResult.success) return coachResult;
 
     try {
-      final jaiRaw = await _invoke({
+      final jaiRaw = await _invoke(_withGeminiScope({
         'range_preset': rangePreset,
         'include_ai': true,
         'ai_agents': 'jai_insight',
         'date_basis': basis,
-      });
+      }, geminiScope));
       final jaiResult = AnalyticsInsightsResult.fromInvokeResponse(jaiRaw);
       if (!jaiResult.success) return coachResult;
       // Second response includes merged coach + new JAI from the Edge merge step.
@@ -113,11 +133,12 @@ class AnalyticsInsightsService {
   static Future<AnalyticsInsightsResult> reviewDocument({
     required String documentId,
     bool includeAi = true,
+    AnalyticsGeminiScope geminiScope = AnalyticsGeminiScope.billy,
   }) async {
-    final raw = await _invoke({
+    final raw = await _invoke(_withGeminiScope({
       'document_id': documentId,
       'include_ai': includeAi,
-    });
+    }, geminiScope));
     return AnalyticsInsightsResult.fromInvokeResponse(raw);
   }
 }

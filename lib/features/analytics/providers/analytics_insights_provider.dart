@@ -34,6 +34,7 @@ class AnalyticsInsightsNotifier extends Notifier<AsyncValue<AnalyticsInsightsRes
     String rangePreset, {
     bool includeAi = true,
     InsightsDateBasis dateBasis = InsightsDateBasis.billDate,
+    AnalyticsGeminiScope geminiScope = AnalyticsGeminiScope.billy,
   }) async {
     final keep = state.valueOrNull;
     try {
@@ -48,6 +49,7 @@ class AnalyticsInsightsNotifier extends Notifier<AsyncValue<AnalyticsInsightsRes
         rangePreset: rangePreset,
         includeAi: includeAi,
         dateBasis: dateBasis,
+        geminiScope: geminiScope,
       );
       if (!r.success) {
         state = keep != null ? AsyncValue.data(keep) : const AsyncValue.data(null);

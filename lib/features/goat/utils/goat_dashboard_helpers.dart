@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 
+import '../../../core/utils/document_date_range.dart';
+
 /// Documents with `date` in [today, today + daysAhead], non-draft.
 List<Map<String, dynamic>> upcomingDocumentsWithinDays(
   List<Map<String, dynamic>> all, {
@@ -25,17 +27,31 @@ List<Map<String, dynamic>> upcomingDocumentsWithinDays(
   return out;
 }
 
-/// Total spend in the last [days] calendar days (non-draft).
-double spendLastDays(List<Map<String, dynamic>> all, int days) {
+DateTime? _activityDayForSpend(Map<String, dynamic> d, WeekSpendBasis basis) {
+  final docRaw = DateTime.tryParse(d['date']?.toString() ?? '');
+  final createdRaw = DateTime.tryParse(d['created_at']?.toString() ?? '');
+  final docDay = docRaw != null ? DateTime(docRaw.year, docRaw.month, docRaw.day) : null;
+  final createdDay = createdRaw != null ? DateTime(createdRaw.year, createdRaw.month, createdRaw.day) : null;
+  switch (basis) {
+    case WeekSpendBasis.uploadDate:
+      return createdDay;
+    case WeekSpendBasis.invoiceDate:
+      return docDay;
+    case WeekSpendBasis.hybrid:
+      return docDay ?? createdDay;
+  }
+}
+
+/// Total spend in the last [days] calendar days (non-draft), by activity day.
+double spendLastDaysByBasis(List<Map<String, dynamic>> all, int days, WeekSpendBasis basis) {
   final now = DateTime.now();
   final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
   final start = end.subtract(Duration(days: days - 1));
   var sum = 0.0;
   for (final d in all) {
     if ((d['status'] as String?) == 'draft') continue;
-    final dt = DateTime.tryParse(d['date']?.toString() ?? '');
-    if (dt == null) continue;
-    final day = DateTime(dt.year, dt.month, dt.day);
+    final day = _activityDayForSpend(d, basis);
+    if (day == null) continue;
     if (!day.isBefore(start) && !day.isAfter(end)) {
       sum += (d['amount'] as num?)?.toDouble() ?? 0;
     }
@@ -43,12 +59,16 @@ double spendLastDays(List<Map<String, dynamic>> all, int days) {
   return sum;
 }
 
+/// Total spend in the last [days] calendar days using bill date only (legacy).
+double spendLastDays(List<Map<String, dynamic>> all, int days) =>
+    spendLastDaysByBasis(all, days, WeekSpendBasis.invoiceDate);
+
 enum GoatCashFlowRisk { low, medium, high }
 
 /// Compare last-7d spend pace vs prior-7d window (rough heuristic).
-GoatCashFlowRisk cashFlowRiskFromDocuments(List<Map<String, dynamic>> all) {
-  final w0 = spendLastDays(all, 7);
-  final w1 = _spendInRange(all, 14, 8);
+GoatCashFlowRisk cashFlowRiskFromDocumentsByBasis(List<Map<String, dynamic>> all, WeekSpendBasis basis) {
+  final w0 = spendLastDaysByBasis(all, 7, basis);
+  final w1 = _spendInRangeByBasis(all, 14, 8, basis);
   if (w1 <= 0 && w0 <= 0) return GoatCashFlowRisk.low;
   if (w1 <= 0) return w0 > 0 ? GoatCashFlowRisk.medium : GoatCashFlowRisk.low;
   final ratio = w0 / w1;
@@ -57,16 +77,18 @@ GoatCashFlowRisk cashFlowRiskFromDocuments(List<Map<String, dynamic>> all) {
   return GoatCashFlowRisk.low;
 }
 
-double _spendInRange(List<Map<String, dynamic>> all, int endDaysAgo, int startDaysAgo) {
+GoatCashFlowRisk cashFlowRiskFromDocuments(List<Map<String, dynamic>> all) =>
+    cashFlowRiskFromDocumentsByBasis(all, WeekSpendBasis.invoiceDate);
+
+double _spendInRangeByBasis(List<Map<String, dynamic>> all, int endDaysAgo, int startDaysAgo, WeekSpendBasis basis) {
   final now = DateTime.now();
   final endDay = DateTime(now.year, now.month, now.day).subtract(Duration(days: endDaysAgo));
   final startDay = DateTime(now.year, now.month, now.day).subtract(Duration(days: startDaysAgo));
   var sum = 0.0;
   for (final d in all) {
     if ((d['status'] as String?) == 'draft') continue;
-    final dt = DateTime.tryParse(d['date']?.toString() ?? '');
-    if (dt == null) continue;
-    final day = DateTime(dt.year, dt.month, dt.day);
+    final day = _activityDayForSpend(d, basis);
+    if (day == null) continue;
     if (!day.isBefore(startDay) && !day.isAfter(endDay)) {
       sum += (d['amount'] as num?)?.toDouble() ?? 0;
     }

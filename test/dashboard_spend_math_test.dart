@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:billy/core/utils/document_date_range.dart';
 import 'package:billy/features/dashboard/utils/dashboard_spend_math.dart';
 
 void main() {
@@ -11,8 +12,9 @@ void main() {
       {'status': 'draft', 'date': '2026-04-07', 'amount': 999},
       {'status': 'saved', 'date': '2026-04-08', 'amount': 5},
     ];
-    final series = DashboardSpendMath.thisWeekDailyDocumentSpend(docs, monday.add(const Duration(days: 2)));
-    final hero = DashboardSpendMath.thisWeekDocumentSpend(docs, monday.add(const Duration(days: 2)));
+    const basis = WeekSpendBasis.invoiceDate;
+    final series = DashboardSpendMath.thisWeekDailyDocumentSpend(docs, monday.add(const Duration(days: 2)), basis);
+    final hero = DashboardSpendMath.thisWeekDocumentSpend(docs, monday.add(const Duration(days: 2)), basis);
     expect(series[0], 10);
     expect(series[1], 25);
     expect(series[2], 5);
@@ -35,7 +37,7 @@ void main() {
       {'status': 'saved', 'date': '2026-03-30', 'amount': 100},
       {'status': 'saved', 'date': '2026-04-08', 'amount': 50},
     ];
-    expect(DashboardSpendMath.lastCalendarWeekDocumentSpend(docs, wed), 100);
+    expect(DashboardSpendMath.lastCalendarWeekDocumentSpend(docs, wed, WeekSpendBasis.invoiceDate), 100);
   });
 
   test('this week uses created_at when invoice date is outside the week (OCR)', () {

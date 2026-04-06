@@ -23,6 +23,18 @@ InsightsDateBasis insightsDateBasisFromApi(String? raw) {
   return InsightsDateBasis.billDate;
 }
 
+/// Home dashboard "this week" and strict analytics axis (upload vs bill vs legacy OR).
+enum WeekSpendBasis {
+  /// Bucket by `documents.created_at` (saved/upload time).
+  uploadDate,
+
+  /// Bucket by `documents.date` (bill date) only.
+  invoiceDate,
+
+  /// Prefer invoice date in week, else upload date in week (legacy Billy behavior).
+  hybrid,
+}
+
 @immutable
 class DocumentDateRange {
   const DocumentDateRange(this.start, this.end);
@@ -74,6 +86,22 @@ class DocumentDateRange {
     DocumentDateRange range,
   ) {
     return docs.where((d) => documentInDateRange(d, range)).toList();
+  }
+
+  /// Analytics-style range filter using a single axis (or legacy OR for [WeekSpendBasis.hybrid]).
+  static List<Map<String, dynamic>> filterDocumentsForWeekBasis(
+    List<Map<String, dynamic>> docs,
+    DocumentDateRange range,
+    WeekSpendBasis basis,
+  ) {
+    switch (basis) {
+      case WeekSpendBasis.hybrid:
+        return filterDocuments(docs, range);
+      case WeekSpendBasis.uploadDate:
+        return docs.where((d) => documentInInsightsBasis(d, range, InsightsDateBasis.uploadWindow)).toList();
+      case WeekSpendBasis.invoiceDate:
+        return docs.where((d) => documentInInsightsBasis(d, range, InsightsDateBasis.billDate)).toList();
+    }
   }
 
   /// Single-axis filter for analytics (bill date only vs upload time only).
@@ -128,5 +156,53 @@ class DocumentDateRange {
       return createdDay;
     }
     return null;
+  }
+
+  static DateTime? _bucketDayForSevenDayWindowBasis(
+    Map<String, dynamic> doc,
+    DateTime windowStart,
+    DateTime windowEnd,
+    WeekSpendBasis basis,
+  ) {
+    switch (basis) {
+      case WeekSpendBasis.hybrid:
+        return _bucketDayForSevenDayWindow(doc, windowStart, windowEnd);
+      case WeekSpendBasis.uploadDate:
+        final createdDay = _dayOnlyFromField(doc['created_at']);
+        if (createdDay != null && !createdDay.isBefore(windowStart) && !createdDay.isAfter(windowEnd)) {
+          return createdDay;
+        }
+        return null;
+      case WeekSpendBasis.invoiceDate:
+        final docDay = _dayOnlyFromField(doc['date']);
+        if (docDay != null && !docDay.isBefore(windowStart) && !docDay.isAfter(windowEnd)) {
+          return docDay;
+        }
+        return null;
+    }
+  }
+
+  /// Last 7 calendar days ending at [endDate], one axis per [basis].
+  static List<double> lastSevenDaySpendingByBasis(
+    List<Map<String, dynamic>> docs,
+    DateTime endDate,
+    WeekSpendBasis basis,
+  ) {
+    final endDay = DateTime(endDate.year, endDate.month, endDate.day);
+    final startDay = endDay.subtract(const Duration(days: 6));
+    final out = <double>[];
+    for (var i = 6; i >= 0; i--) {
+      final d = endDay.subtract(Duration(days: i));
+      var sum = 0.0;
+      for (final doc in docs) {
+        if ((doc['status'] as String?) == 'draft') continue;
+        final bucket = _bucketDayForSevenDayWindowBasis(doc, startDay, endDay, basis);
+        if (bucket == d) {
+          sum += (doc['amount'] as num?)?.toDouble() ?? 0;
+        }
+      }
+      out.add(sum);
+    }
+    return out;
   }
 }

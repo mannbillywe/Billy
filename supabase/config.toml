@@ -1,5 +1,6 @@
-# Production secrets (Dashboard → process-invoice → Secrets):
-#   GEMINI_API_KEY — optional fallback if profiles.gemini_api_key is empty
+# Production secrets (Dashboard → Edge Functions → Secrets):
+#   GEMINI_API_KEY — default Gemini (process-invoice + analytics-insights main path)
+#   GOAT_GEMINI_API_KEY — optional; GOAT analytics AI when client sends gemini_scope=goat (overrides app_api_keys.goat_gemini)
 
 [functions.process-invoice]
 verify_jwt = false

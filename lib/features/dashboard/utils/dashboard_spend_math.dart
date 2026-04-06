@@ -1,3 +1,4 @@
+import '../../../core/utils/document_date_range.dart';
 import '../../lend_borrow/lend_borrow_perspective.dart';
 
 /// Calendar-week document spend and aligned daily series (local dates).
@@ -38,19 +39,40 @@ class DashboardSpendMath {
     DateTime mon,
     DateTime today,
     DateTime weekSunday,
+    WeekSpendBasis basis,
   ) {
     final docDay = _parseDocDay(d['date']);
-    if (docDay != null &&
-        !docDay.isBefore(mon) &&
-        !docDay.isAfter(weekSunday) &&
-        !docDay.isAfter(today)) {
-      return docDay;
-    }
     final createdDay = _parseCreatedDay(d['created_at']);
-    if (createdDay != null && !createdDay.isBefore(mon) && !createdDay.isAfter(today)) {
-      return createdDay;
+
+    switch (basis) {
+      case WeekSpendBasis.uploadDate:
+        if (createdDay != null &&
+            !createdDay.isBefore(mon) &&
+            !createdDay.isAfter(today) &&
+            !createdDay.isAfter(weekSunday)) {
+          return createdDay;
+        }
+        return null;
+      case WeekSpendBasis.invoiceDate:
+        if (docDay != null &&
+            !docDay.isBefore(mon) &&
+            !docDay.isAfter(weekSunday) &&
+            !docDay.isAfter(today)) {
+          return docDay;
+        }
+        return null;
+      case WeekSpendBasis.hybrid:
+        if (docDay != null &&
+            !docDay.isBefore(mon) &&
+            !docDay.isAfter(weekSunday) &&
+            !docDay.isAfter(today)) {
+          return docDay;
+        }
+        if (createdDay != null && !createdDay.isBefore(mon) && !createdDay.isAfter(today)) {
+          return createdDay;
+        }
+        return null;
     }
-    return null;
   }
 
   /// Same idea as [_thisWeekActivityDay] for the previous calendar week (Mon–Sun).
@@ -58,34 +80,57 @@ class DashboardSpendMath {
     Map<String, dynamic> d,
     DateTime prevMon,
     DateTime prevSun,
+    WeekSpendBasis basis,
   ) {
     final docDay = _parseDocDay(d['date']);
-    if (docDay != null && !docDay.isBefore(prevMon) && !docDay.isAfter(prevSun)) {
-      return docDay;
-    }
     final createdDay = _parseCreatedDay(d['created_at']);
-    if (createdDay != null && !createdDay.isBefore(prevMon) && !createdDay.isAfter(prevSun)) {
-      return createdDay;
+
+    switch (basis) {
+      case WeekSpendBasis.uploadDate:
+        if (createdDay != null && !createdDay.isBefore(prevMon) && !createdDay.isAfter(prevSun)) {
+          return createdDay;
+        }
+        return null;
+      case WeekSpendBasis.invoiceDate:
+        if (docDay != null && !docDay.isBefore(prevMon) && !docDay.isAfter(prevSun)) {
+          return docDay;
+        }
+        return null;
+      case WeekSpendBasis.hybrid:
+        if (docDay != null && !docDay.isBefore(prevMon) && !docDay.isAfter(prevSun)) {
+          return docDay;
+        }
+        if (createdDay != null && !createdDay.isBefore(prevMon) && !createdDay.isAfter(prevSun)) {
+          return createdDay;
+        }
+        return null;
     }
-    return null;
   }
 
   /// Non-draft document amounts attributed to the current calendar week (local).
-  static double thisWeekDocumentSpend(List<Map<String, dynamic>> docs, [DateTime? now]) {
+  static double thisWeekDocumentSpend(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+  ]) {
     final n = _dateOnly(now ?? DateTime.now());
     final mon = mondayOfWeek(n);
     final sunday = _dateOnly(mon.add(const Duration(days: 6)));
     var total = 0.0;
     for (final d in docs) {
       if ((d['status'] as String?) == 'draft') continue;
-      if (_thisWeekActivityDay(d, mon, n, sunday) == null) continue;
+      if (_thisWeekActivityDay(d, mon, n, sunday, basis) == null) continue;
       total += (d['amount'] as num?)?.toDouble() ?? 0;
     }
     return total;
   }
 
   /// Full previous calendar week (Mon–Sun), non-draft documents.
-  static double lastCalendarWeekDocumentSpend(List<Map<String, dynamic>> docs, [DateTime? now]) {
+  static double lastCalendarWeekDocumentSpend(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+  ]) {
     final n = _dateOnly(now ?? DateTime.now());
     final thisMon = mondayOfWeek(n);
     final prevSun = _dateOnly(thisMon.subtract(const Duration(days: 1)));
@@ -93,21 +138,25 @@ class DashboardSpendMath {
     var total = 0.0;
     for (final d in docs) {
       if ((d['status'] as String?) == 'draft') continue;
-      if (_prevWeekActivityDay(d, prevMon, prevSun) == null) continue;
+      if (_prevWeekActivityDay(d, prevMon, prevSun, basis) == null) continue;
       total += (d['amount'] as num?)?.toDouble() ?? 0;
     }
     return total;
   }
 
   /// Seven values for Mon–Sun of the current calendar week. Future days (after today) are 0.
-  static List<double> thisWeekDailyDocumentSpend(List<Map<String, dynamic>> docs, [DateTime? now]) {
+  static List<double> thisWeekDailyDocumentSpend(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+  ]) {
     final n = _dateOnly(now ?? DateTime.now());
     final mon = mondayOfWeek(n);
     final sunday = _dateOnly(mon.add(const Duration(days: 6)));
     final byDay = <DateTime, double>{};
     for (final d in docs) {
       if ((d['status'] as String?) == 'draft') continue;
-      final day = _thisWeekActivityDay(d, mon, n, sunday);
+      final day = _thisWeekActivityDay(d, mon, n, sunday, basis);
       if (day == null) continue;
       byDay[day] = (byDay[day] ?? 0) + ((d['amount'] as num?)?.toDouble() ?? 0);
     }
@@ -124,8 +173,12 @@ class DashboardSpendMath {
   }
 
   /// Verifies [thisWeekDocumentSpend] equals the sum of Mon..today in [thisWeekDailyDocumentSpend].
-  static bool debugSeriesMatchesHero(List<Map<String, dynamic>> docs, [DateTime? now]) {
-    final series = thisWeekDailyDocumentSpend(docs, now);
+  static bool debugSeriesMatchesHero(
+    List<Map<String, dynamic>> docs, [
+    DateTime? now,
+    WeekSpendBasis basis = WeekSpendBasis.uploadDate,
+  ]) {
+    final series = thisWeekDailyDocumentSpend(docs, now, basis);
     final n = _dateOnly(now ?? DateTime.now());
     final mon = mondayOfWeek(n);
     var sum = 0.0;
@@ -134,7 +187,18 @@ class DashboardSpendMath {
       if (day.isAfter(n)) break;
       sum += series[i];
     }
-    return (sum - thisWeekDocumentSpend(docs, now)).abs() < 0.0001;
+    return (sum - thisWeekDocumentSpend(docs, now, basis)).abs() < 0.0001;
+  }
+
+  static String weekBasisSubtitle(WeekSpendBasis basis) {
+    switch (basis) {
+      case WeekSpendBasis.uploadDate:
+        return 'Receipts & invoices · by upload date (Mon–today)';
+      case WeekSpendBasis.invoiceDate:
+        return 'Receipts & invoices · by bill date (Mon–today)';
+      case WeekSpendBasis.hybrid:
+        return 'Receipts & invoices · bill date, else upload (Mon–today)';
+    }
   }
 
   /// Pending lend/borrow from the viewer's perspective (same as Friends tab).

@@ -2,7 +2,8 @@
   "name": "billy",
   "private": true,
   "scripts": {
-    "supabase:deploy-process-invoice": "supabase functions deploy process-invoice --project-ref wpzopkigbbldcfpxuvcm"
+    "supabase:deploy-process-invoice": "supabase functions deploy process-invoice --project-ref wpzopkigbbldcfpxuvcm",
+    "supabase:deploy-analytics-insights": "supabase functions deploy analytics-insights --project-ref wpzopkigbbldcfpxuvcm"
   },
   "devDependencies": {
     "supabase": "^2.45.0"

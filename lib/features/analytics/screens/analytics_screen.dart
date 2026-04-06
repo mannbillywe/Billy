@@ -7,6 +7,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/screens/documents_history_screen.dart';
 import '../widgets/ai_insights_panel.dart';
 
@@ -15,6 +16,17 @@ String analyticsCategoryBucket(Map<String, dynamic> d) {
   final parts = (d['description'] as String?)?.split(',');
   final first = parts != null && parts.isNotEmpty ? parts.first.trim() : '';
   return first.isNotEmpty ? first : 'Other';
+}
+
+String _analyticsBasisCaption(WeekSpendBasis basis) {
+  switch (basis) {
+    case WeekSpendBasis.uploadDate:
+      return 'Overview uses save (upload) time inside the range.';
+    case WeekSpendBasis.invoiceDate:
+      return 'Overview uses bill / receipt date inside the range.';
+    case WeekSpendBasis.hybrid:
+      return 'Overview includes a document if bill date or save date is in range.';
+  }
 }
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
@@ -34,9 +46,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final profile = ref.watch(profileProvider).valueOrNull;
     final currency = profile?['preferred_currency'] as String?;
     final docs = docsAsync.valueOrNull ?? [];
+    final weekBasis = ref.watch(weekSpendBasisProvider);
 
     final range = DocumentDateRange.forFilter(_dateFilter);
-    final filtered = DocumentDateRange.filterDocuments(docs, range);
+    final filtered = DocumentDateRange.filterDocumentsForWeekBasis(docs, range, weekBasis);
 
     double totalExpenses = 0;
     final catMap = <String, double>{};
@@ -58,7 +71,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ? ((topCategory.value / totalExpenses) * 100).round()
         : 0;
 
-    final barData = DocumentDateRange.lastSevenDaySpending(filtered, range.end);
+    final barData = DocumentDateRange.lastSevenDaySpendingByBasis(filtered, range.end, weekBasis);
     final avgSpend = barData.isNotEmpty ? barData.reduce((a, b) => a + b) / barData.length : 0.0;
 
     return SingleChildScrollView(
@@ -73,8 +86,44 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             'Range: ${_labelForFilter(_dateFilter)}',
             style: const TextStyle(fontSize: 12, color: BillyTheme.gray500),
           ),
+          const SizedBox(height: 4),
+          Text(
+            _analyticsBasisCaption(weekBasis),
+            style: const TextStyle(fontSize: 11, color: BillyTheme.gray500),
+          ),
           const SizedBox(height: 12),
           _DateFilterBar(selected: _dateFilter, onChanged: (v) => setState(() => _dateFilter = v)),
+          const SizedBox(height: 10),
+          SegmentedButton<WeekSpendBasis>(
+            segments: const [
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.uploadDate,
+                label: Text('Upload date'),
+                icon: Icon(Icons.cloud_upload_outlined, size: 16),
+              ),
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.invoiceDate,
+                label: Text('Bill date'),
+                icon: Icon(Icons.receipt_long_outlined, size: 16),
+              ),
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.hybrid,
+                label: Text('Either'),
+                icon: Icon(Icons.merge_type_outlined, size: 16),
+              ),
+            ],
+            selected: {weekBasis},
+            onSelectionChanged: (next) {
+              ref.read(weekSpendBasisProvider.notifier).setBasis(next.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) return BillyTheme.emerald700;
+                return BillyTheme.gray600;
+              }),
+            ),
+          ),
           const SizedBox(height: 12),
           SegmentedButton<int>(
             segments: const [

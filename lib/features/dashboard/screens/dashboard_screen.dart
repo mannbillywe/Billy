@@ -4,15 +4,15 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/billy_theme.dart';
+import '../../../core/utils/document_date_range.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/utils/document_backdate_hint.dart';
 import '../utils/dashboard_spend_math.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
-import '../../goat/screens/goat_shell_screen.dart';
-import '../../goat/widgets/goat_mode_home_cta.dart';
 import '../widgets/ocr_banner.dart';
 import '../widgets/quick_actions.dart';
 import '../widgets/recent_activity.dart';
@@ -26,7 +26,6 @@ class DashboardScreen extends ConsumerWidget {
     this.onCreateBill,
     this.onOpenAllDocuments,
     this.onOpenDocumentDetail,
-    this.onOpenGoatMode,
   });
 
   final VoidCallback? onOpenScan;
@@ -34,7 +33,6 @@ class DashboardScreen extends ConsumerWidget {
   final VoidCallback? onCreateBill;
   final void Function(String documentId)? onOpenDocumentDetail;
   final VoidCallback? onOpenAllDocuments;
-  final VoidCallback? onOpenGoatMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -45,9 +43,10 @@ class DashboardScreen extends ConsumerWidget {
 
     final allDocs = docsAsync.valueOrNull ?? [];
     final uid = Supabase.instance.client.auth.currentUser?.id;
-    final weekSpend = DashboardSpendMath.thisWeekDocumentSpend(allDocs);
-    final lastWeekSpend = DashboardSpendMath.lastCalendarWeekDocumentSpend(allDocs);
-    final dailyData = DashboardSpendMath.thisWeekDailyDocumentSpend(allDocs);
+    final weekBasis = ref.watch(weekSpendBasisProvider);
+    final weekSpend = DashboardSpendMath.thisWeekDocumentSpend(allDocs, null, weekBasis);
+    final lastWeekSpend = DashboardSpendMath.lastCalendarWeekDocumentSpend(allDocs, null, weekBasis);
+    final dailyData = DashboardSpendMath.thisWeekDailyDocumentSpend(allDocs, null, weekBasis);
     final lbEntries = lbAsync.valueOrNull ?? [];
     final pendingLb = DashboardSpendMath.pendingLendBorrowTotals(lbEntries, uid);
     final addedLb = DashboardSpendMath.lendBorrowAddedThisCalendarWeek(lbEntries, uid);
@@ -127,9 +126,46 @@ class DashboardScreen extends ConsumerWidget {
                 backgroundColor: BillyTheme.gray100,
               ),
             ),
+          Text(
+            'Count this week by',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BillyTheme.gray600),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<WeekSpendBasis>(
+            segments: const [
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.uploadDate,
+                label: Text('Upload date'),
+                icon: Icon(Icons.cloud_upload_outlined, size: 16),
+              ),
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.invoiceDate,
+                label: Text('Bill date'),
+                icon: Icon(Icons.receipt_long_outlined, size: 16),
+              ),
+              ButtonSegment<WeekSpendBasis>(
+                value: WeekSpendBasis.hybrid,
+                label: Text('Both'),
+                icon: Icon(Icons.merge_type_outlined, size: 16),
+              ),
+            ],
+            selected: {weekBasis},
+            onSelectionChanged: (next) {
+              ref.read(weekSpendBasisProvider.notifier).setBasis(next.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) return BillyTheme.emerald700;
+                return BillyTheme.gray600;
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
           SpendHero(
             weekSpend: weekSpend,
             currencyCode: currency,
+            weekSubtitle: DashboardSpendMath.weekBasisSubtitle(weekBasis),
             weeklyData: dailyData,
             lendCollectWeek: lbWeekDaily.collect,
             lendPayWeek: lbWeekDaily.pay,
@@ -138,14 +174,6 @@ class DashboardScreen extends ConsumerWidget {
             friendPendingPay: pendingLb.pay,
             friendAddedThisWeekCollect: addedLb.collect,
             friendAddedThisWeekPay: addedLb.pay,
-          ),
-          GoatModeHomeCta(
-            onPressed: onOpenGoatMode ??
-                () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const GoatShellScreen()),
-                  );
-                },
           ),
           const SizedBox(height: 20),
           Row(
