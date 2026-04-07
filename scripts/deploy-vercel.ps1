@@ -6,6 +6,21 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $buildWeb = Join-Path $projectRoot "build\web"
 
+# Optional: VERCEL_TOKEN (and scope) from repo-root .env.local (gitignored).
+if (-not $env:VERCEL_TOKEN) {
+    $envLocal = Join-Path $projectRoot ".env.local"
+    if (Test-Path $envLocal) {
+        foreach ($line in Get-Content $envLocal) {
+            if ($line -match '^\s*VERCEL_TOKEN=(.+)$') {
+                $env:VERCEL_TOKEN = $Matches[1].Trim().Trim('"')
+            }
+            if ($line -match '^\s*VERCEL_SCOPE=(.+)$') {
+                $env:VERCEL_SCOPE = $Matches[1].Trim().Trim('"')
+            }
+        }
+    }
+}
+
 Write-Host "Building Flutter web..." -ForegroundColor Cyan
 Set-Location $projectRoot
 $flutter = Get-Command flutter -ErrorAction SilentlyContinue

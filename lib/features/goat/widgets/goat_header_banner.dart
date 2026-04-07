@@ -7,11 +7,14 @@ class GoatHeaderBanner extends StatelessWidget {
     super.key,
     required this.onExit,
     this.onOpenStatements,
+    this.onOpenSetup,
   });
 
   final VoidCallback onExit;
   /// Bank/card statement import (hub). Always visible so upload is not buried under Home scroll.
   final VoidCallback? onOpenStatements;
+  /// GOAT readiness / chat-first setup wizard.
+  final VoidCallback? onOpenSetup;
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +80,18 @@ class GoatHeaderBanner extends StatelessWidget {
               ],
             ),
             const Spacer(),
+            if (onOpenSetup != null)
+              IconButton(
+                onPressed: onOpenSetup,
+                tooltip: 'GOAT setup',
+                style: IconButton.styleFrom(
+                  backgroundColor: GoatTokens.surfaceElevated,
+                  foregroundColor: GoatTokens.gold,
+                  side: BorderSide(color: GoatTokens.gold.withValues(alpha: 0.35)),
+                ),
+                icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+              ),
+            if (onOpenSetup != null) const SizedBox(width: 6),
             if (onOpenStatements != null)
               IconButton(
                 onPressed: onOpenStatements,

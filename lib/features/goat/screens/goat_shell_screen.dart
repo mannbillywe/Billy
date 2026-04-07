@@ -14,6 +14,7 @@ import 'goat_goals_screen.dart';
 import 'goat_home_tab.dart';
 import 'goat_preferences_screen.dart';
 import 'goat_recurring_screen.dart';
+import '../setup/screens/goat_setup_screen.dart';
 
 /// Premium GOAT workspace shell (separate from main Billy chrome).
 class GoatShellScreen extends ConsumerStatefulWidget {
@@ -79,6 +80,11 @@ class _GoatShellScreenState extends ConsumerState<GoatShellScreen> {
                   onOpenStatements: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(builder: (_) => const GoatStatementsHubScreen()),
+                    );
+                  },
+                  onOpenSetup: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const GoatSetupScreen()),
                     );
                   },
                 ),

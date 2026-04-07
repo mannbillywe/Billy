@@ -10,3 +10,6 @@ verify_jwt = false
 
 [functions.statement-classify]
 verify_jwt = true
+
+[functions.goat-setup-chat]
+verify_jwt = true

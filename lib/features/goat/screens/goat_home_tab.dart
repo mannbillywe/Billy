@@ -15,6 +15,9 @@ import '../utils/goat_dashboard_helpers.dart';
 import '../widgets/goat_chip.dart';
 import '../statements/screens/goat_statements_hub_screen.dart';
 import '../widgets/goat_premium_card.dart';
+import '../setup/goat_setup_providers.dart';
+import '../setup/widgets/goat_readiness_card.dart';
+import '../setup/widgets/goat_setup_resume_banner.dart';
 
 class GoatHomeTab extends ConsumerWidget {
   const GoatHomeTab({super.key, required this.onNavigateToModule});
@@ -77,12 +80,22 @@ class GoatHomeTab extends ConsumerWidget {
     final daily = weekSpend / 7;
     final risk = cashFlowRiskFromDocumentsByBasis(all, weekBasis);
     final roughBuffer = (daily * 2).clamp(0.0, 1e12);
+    final readinessAsync = ref.watch(goatReadinessProvider);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const GoatSetupResumeBanner(),
+          readinessAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
+            data: (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: GoatReadinessCard(readiness: r),
+            ),
+          ),
           if (loading)
             const Padding(
               padding: EdgeInsets.only(bottom: 12),

@@ -1,16 +1,10 @@
-# Deploy the `statement-classify` Edge Function via Supabase Management API.
-#
-# Why this script exists:
-# - Personal access tokens shaped like `sbp_v0_...` work with api.supabase.com but the
-#   Supabase CLI may reject them ("Invalid access token format"). This uses the same
-#   multipart upload the CLI sends: metadata JSON + one `file` part per source path.
+# Deploy `goat-setup-chat` Edge Function via Supabase Management API.
+# Same multipart pattern as deploy-statement-classify-supabase-api.ps1 (sbp_v0_ tokens).
 #
 # Prerequisites:
 # - curl.exe (Windows 10+)
-# - SUPABASE_ACCESS_TOKEN in environment, or in repo-root `.env.local` as:
+# - SUPABASE_ACCESS_TOKEN in environment, or repo-root `.env.local`:
 #     SUPABASE_ACCESS_TOKEN=your_token
-#
-# Optional: `supabase/.temp/project-ref` (from `supabase link`) overrides default ref below.
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -40,11 +34,12 @@ if (Test-Path $refPath) {
     if ($fromFile.Length -gt 0) { $projectRef = $fromFile }
 }
 
-$metaPath = Join-Path $env:TEMP "billy-statement-classify-deploy-metadata.json"
-$metaJson = '{"entrypoint_path":"supabase/functions/statement-classify/index.ts","name":"statement-classify","verify_jwt":true}'
+$metaPath = Join-Path $env:TEMP "billy-goat-setup-chat-deploy-metadata.json"
+# BOM breaks Supabase API ("expected value at line 1 column 1") — write UTF-8 without BOM.
+$metaJson = '{"entrypoint_path":"supabase/functions/goat-setup-chat/index.ts","name":"goat-setup-chat","verify_jwt":true}'
 [System.IO.File]::WriteAllText($metaPath, $metaJson, [System.Text.UTF8Encoding]::new($false))
 
-$indexTs = Join-Path $projectRoot "supabase\functions\statement-classify\index.ts"
+$indexTs = Join-Path $projectRoot "supabase\functions\goat-setup-chat\index.ts"
 $corsTs = Join-Path $projectRoot "supabase\functions\_shared\cors.ts"
 $geminiTs = Join-Path $projectRoot "supabase\functions\_shared\resolve_gemini_key.ts"
 foreach ($p in @($indexTs, $corsTs, $geminiTs)) {
@@ -54,18 +49,18 @@ foreach ($p in @($indexTs, $corsTs, $geminiTs)) {
     }
 }
 
-Write-Host "Deploying statement-classify to project $projectRef ..." -ForegroundColor Cyan
-$url = "https://api.supabase.com/v1/projects/$projectRef/functions/deploy?slug=statement-classify"
-$args = @(
+Write-Host "Deploying goat-setup-chat to project $projectRef ..." -ForegroundColor Cyan
+$url = "https://api.supabase.com/v1/projects/$projectRef/functions/deploy?slug=goat-setup-chat"
+$curlArgs = @(
     "-s", "-S", "-f", "-w", "`nHTTP:%{http_code}",
     "-X", "POST", $url,
     "-H", "Authorization: Bearer $token",
     "-F", "metadata=@$metaPath;type=application/json",
-    "-F", "file=@$indexTs;filename=supabase/functions/statement-classify/index.ts",
+    "-F", "file=@$indexTs;filename=supabase/functions/goat-setup-chat/index.ts",
     "-F", "file=@$corsTs;filename=supabase/functions/_shared/cors.ts",
     "-F", "file=@$geminiTs;filename=supabase/functions/_shared/resolve_gemini_key.ts"
 )
-$output = & curl.exe @args 2>&1
+$output = & curl.exe @curlArgs 2>&1
 Write-Host ($output | Out-String)
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
