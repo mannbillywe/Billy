@@ -34,6 +34,35 @@ class StatementRepository {
   static SupabaseClient get _c => Supabase.instance.client;
   static String? get _uid => _c.auth.currentUser?.id;
 
+  /// Mobile Safari often surfaces flaky cellular as [ClientException] / "Load failed".
+  static bool _isLikelyTransientNetworkImport(Object e) {
+    if (e is PostgrestException || e is AuthException) return false;
+    final s = e.toString().toLowerCase();
+    return s.contains('load failed') ||
+        s.contains('failed to execute fetch') ||
+        s.contains('clientexception') ||
+        s.contains('socketexception') ||
+        s.contains('connection reset') ||
+        s.contains('connection closed') ||
+        s.contains('timed out') ||
+        s.contains('timeout') ||
+        s.contains('network is unreachable');
+  }
+
+  static Future<T> _retryImportNetwork<T>(Future<T> Function() run) async {
+    Object? last;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await run();
+      } catch (e, _) {
+        last = e;
+        if (!_isLikelyTransientNetworkImport(e) || attempt == 3) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 350 * (1 << attempt)));
+      }
+    }
+    throw last ?? StateError('statement import retry');
+  }
+
   static String sha256Hex(Uint8List bytes) => sha256.convert(bytes).toString();
 
   static String storagePathFor({required String uid, required String importId, required String fileName}) {
@@ -621,21 +650,37 @@ class StatementRepository {
       });
     }
 
-    const txnChunkSize = 100;
+    // Small chunks + retries for mobile WebKit; keep_separate skips ?select=id to trim work per request.
+    const txnChunkSize = 30;
     final txnIds = <String>[];
-    for (var i = 0; i < pendingPayloads.length; i += txnChunkSize) {
-      final end = i + txnChunkSize > pendingPayloads.length ? pendingPayloads.length : i + txnChunkSize;
-      final chunk = pendingPayloads.sublist(i, end);
-      final res = await _c.from('statement_transactions').insert(chunk).select('id');
-      final inserted = List<Map<String, dynamic>>.from(res as List);
-      if (inserted.length != chunk.length) {
-        throw StateError('Batch insert size mismatch (${inserted.length} vs ${chunk.length}).');
+
+    if (importMode == 'keep_separate') {
+      for (var i = 0; i < pendingPayloads.length; i += txnChunkSize) {
+        final end = i + txnChunkSize > pendingPayloads.length ? pendingPayloads.length : i + txnChunkSize;
+        final chunk = pendingPayloads.sublist(i, end);
+        await _retryImportNetwork(() async {
+          await _c.from('statement_transactions').insert(chunk);
+        });
       }
-      for (final row in inserted) {
-        txnIds.add(row['id'] as String);
+      imported = pendingPayloads.length;
+    } else {
+      for (var i = 0; i < pendingPayloads.length; i += txnChunkSize) {
+        final end = i + txnChunkSize > pendingPayloads.length ? pendingPayloads.length : i + txnChunkSize;
+        final chunk = pendingPayloads.sublist(i, end);
+        final res = await _retryImportNetwork(() async {
+          final r = await _c.from('statement_transactions').insert(chunk).select('id');
+          return r;
+        });
+        final inserted = List<Map<String, dynamic>>.from(res as List);
+        if (inserted.length != chunk.length) {
+          throw StateError('Batch insert size mismatch (${inserted.length} vs ${chunk.length}).');
+        }
+        for (final row in inserted) {
+          txnIds.add(row['id'] as String);
+        }
       }
+      imported = txnIds.length;
     }
-    imported = txnIds.length;
 
     if (importMode != 'keep_separate') {
       for (var idx = 0; idx < pendingRows.length; idx++) {
