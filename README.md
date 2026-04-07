@@ -60,6 +60,17 @@ Connected to: `https://wpzopkigbbldcfpxuvcm.supabase.co`
 - `config/supabase.js` – for web/Node.js
 - `config/supabase.dart` – for Flutter
 
+### Deploy `statement-classify` (GOAT Edge Function)
+
+The Supabase CLI may reject newer access tokens (`sbp_v0_…`). To deploy with a token that works on `api.supabase.com`, use:
+
+```powershell
+# SUPABASE_ACCESS_TOKEN in env, or in repo-root .env.local (gitignored)
+.\scripts\deploy-statement-classify-supabase-api.ps1
+```
+
+Requires `curl.exe`. Project ref defaults to this repo’s Supabase project; override via `supabase/.temp/project-ref` after `supabase link`.
+
 ### Flutter setup
 ```yaml
 # pubspec.yaml

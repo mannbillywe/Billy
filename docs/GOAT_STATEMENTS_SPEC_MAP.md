@@ -20,3 +20,5 @@ This project implements the three-layer ingestion model using **existing table n
 **Analysis lens:** `profiles.goat_analysis_lens` (`smart`, `statements_only`, `ocr_only`, `combined_raw`). Dataset composition for home spend and related widgets is centralized in `lib/features/goat/statements/goat_lens_datasets.dart`.
 
 **Optional AI (assistive):** Edge Function `statement-classify` — pass-1 classification from a **text excerpt only**; updates `document_family` and `metadata.ai_classification`. Client: `StatementClassificationService`.
+
+**Deploy:** If the Supabase CLI rejects your PAT, run `scripts/deploy-statement-classify-supabase-api.ps1` (Management API multipart upload; token from `SUPABASE_ACCESS_TOKEN` or `.env.local`).
