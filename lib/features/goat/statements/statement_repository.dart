@@ -591,6 +591,9 @@ class StatementRepository {
     var review = 0;
     final fingerprints = <String>{};
 
+    // One HTTP round-trip per row breaks on mobile Safari (Load failed) for large imports.
+    final pendingRows = <ParsedStatementTxn>[];
+    final pendingPayloads = <Map<String, dynamic>>[];
     for (final r in rows) {
       final fp = _fingerprint(uid, accountId, r.txnDate, r.amount, r.description);
       if (fingerprints.contains(fp)) {
@@ -598,97 +601,113 @@ class StatementRepository {
         continue;
       }
       fingerprints.add(fp);
-
+      pendingRows.add(r);
       final signed = r.direction == 'debit' ? -r.amount : r.amount;
-      final ins = await _c
-          .from('statement_transactions')
-          .insert({
-            'import_id': importId,
-            'account_id': accountId,
-            'user_id': uid,
-            'txn_date': _ymd(r.txnDate),
-            'description_raw': r.description,
-            'amount': r.amount,
-            'direction': r.direction,
-            'signed_amount': signed,
-            if (r.balance != null) 'balance': r.balance,
-            'currency': currency,
-            if (r.reference != null && r.reference!.isNotEmpty) 'reference_no': r.reference,
-            'unique_fingerprint': fp,
-            'status': 'active',
-            'txn_type': 'other',
-          })
-          .select('id')
-          .single();
-      final txnId = ins['id'] as String;
-      imported++;
+      pendingPayloads.add({
+        'import_id': importId,
+        'account_id': accountId,
+        'user_id': uid,
+        'txn_date': _ymd(r.txnDate),
+        'description_raw': r.description,
+        'amount': r.amount,
+        'direction': r.direction,
+        'signed_amount': signed,
+        if (r.balance != null) 'balance': r.balance,
+        'currency': currency,
+        if (r.reference != null && r.reference!.isNotEmpty) 'reference_no': r.reference,
+        'unique_fingerprint': fp,
+        'status': 'active',
+        'txn_type': 'other',
+      });
+    }
 
-      if (importMode == 'keep_separate') continue;
-
-      Map<String, dynamic>? bestDoc;
-      var bestScore = 0.0;
-      for (final d in savedDocs) {
-        if (d['exclude_from_goat_smart_analytics'] == true) continue;
-        final s = StatementDedupe.scoreDocumentMatch(
-          document: d,
-          stmtDate: r.txnDate,
-          stmtAmount: r.amount,
-          stmtDescription: r.description,
-        );
-        if (s > bestScore) {
-          bestScore = s;
-          bestDoc = d;
-        }
+    const txnChunkSize = 100;
+    final txnIds = <String>[];
+    for (var i = 0; i < pendingPayloads.length; i += txnChunkSize) {
+      final end = i + txnChunkSize > pendingPayloads.length ? pendingPayloads.length : i + txnChunkSize;
+      final chunk = pendingPayloads.sublist(i, end);
+      final res = await _c.from('statement_transactions').insert(chunk).select('id');
+      final inserted = List<Map<String, dynamic>>.from(res as List);
+      if (inserted.length != chunk.length) {
+        throw StateError('Batch insert size mismatch (${inserted.length} vs ${chunk.length}).');
       }
+      for (final row in inserted) {
+        txnIds.add(row['id'] as String);
+      }
+    }
+    imported = txnIds.length;
 
-      final mt = StatementDedupe.matchTypeForScore(bestScore);
-      if (bestDoc != null && mt != 'none') {
-        final exclude = bestScore >= StatementDedupe.thresholdPossible;
-        await _c.from('statement_document_links').insert({
-          'user_id': uid,
-          'statement_transaction_id': txnId,
-          'document_id': bestDoc['id'],
-          'match_type': mt,
-          'score': bestScore,
-          'is_excluded_from_double_count': exclude,
-        });
-        linked++;
-        if (bestScore < StatementDedupe.thresholdHigh) review++;
+    if (importMode != 'keep_separate') {
+      for (var idx = 0; idx < pendingRows.length; idx++) {
+        final r = pendingRows[idx];
+        final txnId = txnIds[idx];
+        final signed = r.direction == 'debit' ? -r.amount : r.amount;
 
-        if (exclude) {
-          await SupabaseService.updateDocument(
-            id: bestDoc['id'] as String,
-            excludeFromGoatSmartAnalytics: true,
+        Map<String, dynamic>? bestDoc;
+        var bestScore = 0.0;
+        for (final d in savedDocs) {
+          if (d['exclude_from_goat_smart_analytics'] == true) continue;
+          final s = StatementDedupe.scoreDocumentMatch(
+            document: d,
+            stmtDate: r.txnDate,
+            stmtAmount: r.amount,
+            stmtDescription: r.description,
           );
+          if (s > bestScore) {
+            bestScore = s;
+            bestDoc = d;
+          }
         }
 
-        await _c.from('canonical_financial_events').insert({
-          'user_id': uid,
-          'primary_source': 'statement',
-          'primary_statement_transaction_id': txnId,
-          'primary_document_id': bestDoc['id'],
-          'event_date': _ymd(r.txnDate),
-          'merchant_name': r.description,
-          'amount': r.amount,
-          'signed_amount': signed,
-          'direction': r.direction,
-          'currency': currency,
-          'account_id': accountId,
-          'dedupe_status': bestScore >= StatementDedupe.thresholdHigh ? 'resolved' : 'needs_review',
-        });
-      } else {
-        await _c.from('canonical_financial_events').insert({
-          'user_id': uid,
-          'primary_source': 'statement',
-          'primary_statement_transaction_id': txnId,
-          'event_date': _ymd(r.txnDate),
-          'merchant_name': r.description,
-          'amount': r.amount,
-          'signed_amount': signed,
-          'direction': r.direction,
-          'currency': currency,
-          'account_id': accountId,
-        });
+        final mt = StatementDedupe.matchTypeForScore(bestScore);
+        if (bestDoc != null && mt != 'none') {
+          final exclude = bestScore >= StatementDedupe.thresholdPossible;
+          await _c.from('statement_document_links').insert({
+            'user_id': uid,
+            'statement_transaction_id': txnId,
+            'document_id': bestDoc['id'],
+            'match_type': mt,
+            'score': bestScore,
+            'is_excluded_from_double_count': exclude,
+          });
+          linked++;
+          if (bestScore < StatementDedupe.thresholdHigh) review++;
+
+          if (exclude) {
+            await SupabaseService.updateDocument(
+              id: bestDoc['id'] as String,
+              excludeFromGoatSmartAnalytics: true,
+            );
+          }
+
+          await _c.from('canonical_financial_events').insert({
+            'user_id': uid,
+            'primary_source': 'statement',
+            'primary_statement_transaction_id': txnId,
+            'primary_document_id': bestDoc['id'],
+            'event_date': _ymd(r.txnDate),
+            'merchant_name': r.description,
+            'amount': r.amount,
+            'signed_amount': signed,
+            'direction': r.direction,
+            'currency': currency,
+            'account_id': accountId,
+            'dedupe_status': bestScore >= StatementDedupe.thresholdHigh ? 'resolved' : 'needs_review',
+          });
+        } else {
+          await _c.from('canonical_financial_events').insert({
+            'user_id': uid,
+            'primary_source': 'statement',
+            'primary_statement_transaction_id': txnId,
+            'event_date': _ymd(r.txnDate),
+            'merchant_name': r.description,
+            'amount': r.amount,
+            'signed_amount': signed,
+            'direction': r.direction,
+            'currency': currency,
+            'account_id': accountId,
+          });
+        }
       }
     }
 
