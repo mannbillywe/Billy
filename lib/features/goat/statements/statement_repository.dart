@@ -82,13 +82,16 @@ class StatementRepository {
   static Future<Map<String, dynamic>?> findImportByHash(String fileHash) async {
     final uid = _uid;
     if (uid == null) return null;
-    return _c
+    final res = await _c
         .from('statement_imports')
         .select()
         .eq('user_id', uid)
         .eq('file_hash', fileHash)
         .inFilter('import_status', ['imported', 'parsed', 'needs_review'])
-        .maybeSingle();
+        .order('created_at', ascending: false)
+        .limit(1);
+    final list = List<Map<String, dynamic>>.from(res as List);
+    return list.isEmpty ? null : list.first;
   }
 
   static Future<String> createImportRow({
@@ -560,14 +563,17 @@ class StatementRepository {
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
-    final existing = await _c
+    // Duplicates can exist (no unique on account_name); maybeSingle() throws 406 if >1 row.
+    final existingRes = await _c
         .from('statement_accounts')
         .select('id')
         .eq('user_id', uid)
         .eq('account_name', accountName)
-        .maybeSingle();
-    if (existing != null) {
-      final id = existing['id'] as String;
+        .order('last_seen_at', ascending: false)
+        .limit(1);
+    final existingList = List<Map<String, dynamic>>.from(existingRes as List);
+    if (existingList.isNotEmpty) {
+      final id = existingList.first['id'] as String;
       await _c.from('statement_accounts').update({
         'last_seen_at': DateTime.now().toIso8601String(),
         if (mask != null) 'account_mask': mask,

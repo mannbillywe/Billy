@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/goat_theme.dart';
+import '../../../../providers/documents_provider.dart';
 import '../../../../providers/goat_statements_providers.dart';
 import '../../../../providers/profile_provider.dart';
 import '../../widgets/goat_premium_card.dart';
+import 'goat_ledger_documents_screen.dart';
 import 'goat_statements_subscreens.dart';
 import 'statement_upload_wizard_screen.dart';
 
@@ -48,6 +50,7 @@ class GoatStatementsHubScreen extends ConsumerWidget {
             ref.invalidate(statementDocumentLinksProvider);
             ref.invalidate(canonicalFinancialEventsProvider);
             ref.invalidate(statementImportReviewsProvider);
+            ref.invalidate(documentsProvider);
           },
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
@@ -95,6 +98,9 @@ class GoatStatementsHubScreen extends ConsumerWidget {
               const SizedBox(height: 20),
               Text('Navigate', style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),
+              _tile(context, 'Receipts in GOAT', 'Include / exclude from Smart, delete', Icons.description_outlined, () {
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const GoatLedgerDocumentsScreen()));
+              }),
               _tile(context, 'Transactions', 'Filters & badges', Icons.receipt_long_outlined, () {
                 Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StatementTransactionsScreen()));
               }),

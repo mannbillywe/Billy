@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/formatting/app_currency.dart';
 import '../../../../core/theme/goat_theme.dart';
+import '../../../../providers/goat_cash_providers.dart' show goatForecastProvider;
 import '../../../../providers/goat_statements_providers.dart';
 import '../../../../providers/profile_provider.dart';
 import '../../widgets/goat_premium_card.dart';
@@ -118,13 +119,62 @@ class StatementImportsScreen extends ConsumerWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
                 final r = rows[i];
+                final importId = r['id'] as String?;
                 return GoatPremiumCard(
                   accentBorder: false,
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(r['file_name'] as String? ?? '', style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w700)),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              r['file_name'] as String? ?? '',
+                              style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          if (importId != null)
+                            IconButton(
+                              tooltip: 'Delete import',
+                              icon: Icon(Icons.delete_outline, color: const Color(0xFFFCA5A5), size: 22),
+                              onPressed: () async {
+                                final go = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    backgroundColor: GoatTokens.surface,
+                                    title: Text('Delete this import?', style: TextStyle(color: GoatTokens.textPrimary)),
+                                    content: Text(
+                                      'Removes the import record and all statement rows tied to it (cascade). '
+                                      'The file may remain in storage.',
+                                      style: TextStyle(color: GoatTokens.textMuted, fontSize: 13, height: 1.35),
+                                    ),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                      FilledButton(
+                                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (go == true && context.mounted) {
+                                  await StatementRepository.deleteImport(importId);
+                                  ref.invalidate(statementImportsProvider);
+                                  ref.invalidate(statementTransactionsProvider);
+                                  ref.invalidate(statementAccountsProvider);
+                                  ref.invalidate(statementDocumentLinksProvider);
+                                  ref.invalidate(canonicalFinancialEventsProvider);
+                                  ref.invalidate(statementImportReviewsProvider);
+                                  ref.invalidate(goatLensWeekDebitSpendProvider);
+                                  ref.invalidate(goatForecastProvider);
+                                }
+                              },
+                            ),
+                        ],
+                      ),
                       Text(
                         '${r['import_status']} · ${r['transaction_count']} rows · ${(r['parse_confidence'] as num?)?.toStringAsFixed(0) ?? '—'}% conf',
                         style: TextStyle(color: GoatTokens.textMuted, fontSize: 11),
