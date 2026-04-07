@@ -37,7 +37,10 @@ if ($env:SENTRY_DSN) {
 # --no-wasm-dry-run: quieter CI/local logs (Flutter 3.27+ wasm dry run notice).
 # Avoid deploying from web/ without a build — see README.md (Vercel section).
 & flutter build web --release @defineArgs @envDefines --no-wasm-dry-run
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "If the error mentions symlink support: enable Windows Developer Mode (Settings → System → For developers)." -ForegroundColor Yellow
+    exit $LASTEXITCODE
+}
 
 # SPA fallback for Flutter web client routing
 $vercelSrc = Join-Path $projectRoot "web\vercel.json"
