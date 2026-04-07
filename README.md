@@ -4,9 +4,22 @@ Flutter app (Android, iOS, Web) for managing invoices, receipts, and expenses wi
 
 ## Deploy to Vercel (Web)
 
-**Production (current team project):** [https://billycon.vercel.app](https://billycon.vercel.app)
+**Production URLs**
 
-**Important:** Deploy **only** via `scripts/deploy-vercel.ps1` (or the same steps manually: `flutter build web` → copy `web/vercel.json` and `web/api/` into `build/web` → `vercel deploy` **from `build/web`**). Running `vercel deploy` from the `web/` folder uploads **templates only** (no compiled Dart), so the site will be blank.
+- CLI-linked project: [https://billycon.vercel.app](https://billycon.vercel.app)
+- Older Git-connected project (often broken if misconfigured): [https://web-iota-lilac-34.vercel.app](https://web-iota-lilac-34.vercel.app)
+
+**Why `web-iota-lilac-34` can look “blank” (only title *billy*)**
+
+Vercel is serving the **source** `web/` folder (HTML + `flutter_bootstrap.js` shell) **without** running `flutter build web`. The compiled **`main.dart.js`**, **CanvasKit**, and assets live under **`build/web/`** only after a local/CI build. Fix: deploy **`build/web`**, not **`web/`**.
+
+**Ways to deploy correctly**
+
+1. **Local:** `scripts/deploy-vercel.ps1` (builds, copies `vercel.json` + `web/api/`, deploys from `build/web`).
+2. **GitHub:** Actions → **Deploy web to Vercel** (`deploy-vercel-web.yml`). Set `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` in repo secrets; use the **Project ID** of the project whose domain you want (e.g. `web-iota-lilac-34`).
+3. **Vercel dashboard:** For the broken project, either **disconnect Git** and deploy only via (1)/(2), or remove **Root Directory = `web`** and do **not** rely on a static export — Vercel’s default image has **no Flutter SDK**, so Git auto-build cannot compile Dart unless you add a custom approach.
+
+**Important:** Do **not** run `vercel deploy` from the **`web/`** folder alone; the site will be missing compiled Dart and will fail to boot.
 
 **Windows:** If `flutter build web` fails with *“Building with plugins requires symlink support”*, enable **Developer Mode** (Settings → System → For developers → Developer Mode), then run `start ms-settings:developers` to open the page. Alternatively build on macOS/Linux or use CI.
 

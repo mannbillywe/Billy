@@ -1,0 +1,58 @@
+# Deploy compiled Flutter web to Vercel (fixes "blank" sites that only serve source web/).
+#
+# Required GitHub repo secrets (Settings → Secrets and variables → Actions):
+#   VERCEL_TOKEN        — https://vercel.com/account/tokens
+#   VERCEL_ORG_ID       — Vercel → Team Settings → Team ID
+#   VERCEL_PROJECT_ID   — Vercel → Project (e.g. web-iota-lilac-34) → Settings → General → Project ID
+#
+# Optional (override embedded Supabase in lib/config/supabase_config.dart):
+#   SUPABASE_URL
+#   SUPABASE_ANON_KEY
+#
+name: Deploy web to Vercel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build web
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -e
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ]; then
+            flutter build web --release --no-wasm-dry-run \
+              --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+              --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          else
+            flutter build web --release --no-wasm-dry-run
+          fi
+
+      - name: Stage Vercel config and API routes
+        run: |
+          cp web/vercel.json build/web/vercel.json
+          mkdir -p build/web/api
+          cp -r web/api/. build/web/api/ 2>/dev/null || true
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx vercel deploy --prod --yes ./build/web

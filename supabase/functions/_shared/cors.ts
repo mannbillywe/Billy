@@ -15,6 +15,7 @@ const DEFAULT_ALLOWLIST = [
   "http://127.0.0.1:8080",
   "http://localhost:54321",
   "https://web-iota-lilac-34.vercel.app",
+  "https://billycon.vercel.app",
   "https://web-15rpy0ypp-mannbillywes-projects.vercel.app",
 ];
 

@@ -64,6 +64,9 @@ if (-not (Test-Path $buildWeb)) {
 }
 
 Write-Host "Deploying to Vercel..." -ForegroundColor Cyan
+if ($env:VERCEL_PROJECT_ID) {
+    Write-Host "Using VERCEL_ORG_ID / VERCEL_PROJECT_ID (deploys to that project, e.g. web-iota-lilac-34)." -ForegroundColor Gray
+}
 Set-Location $buildWeb
 $scope = if ($env:VERCEL_SCOPE) { $env:VERCEL_SCOPE } else { "mannbillywes-projects" }
 if ($env:VERCEL_TOKEN) {

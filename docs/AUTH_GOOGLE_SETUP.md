@@ -11,7 +11,8 @@ That message means **Google is not fully configured in the Supabase dashboard**,
 3. **APIs & Services** → **Credentials** → **Create credentials** → **OAuth client ID**.
 4. Create a **Web application** client (needed for Billy web on Vercel):
    - **Authorized JavaScript origins** (add each URL users use):
-     - `https://web-iota-lilac-34.vercel.app`
+     - `https://web-iota-lilac-34.vercel.app` (legacy domain; only if you still use it)
+     - `https://billycon.vercel.app` (CLI / correct `build/web` deploys)
      - `http://localhost:PORT` (if you test Flutter web locally)
    - **Authorized redirect URIs** (required):
      - `https://wpzopkigbbldcfpxuvcm.supabase.co/auth/v1/callback`  
@@ -30,8 +31,9 @@ Optional: add separate **iOS** / **Android** OAuth clients if you ship mobile ap
 ## 3. Supabase URL configuration (web)
 
 1. **Authentication** → **URL Configuration**.
-2. **Site URL:** your main app URL, e.g. `https://web-iota-lilac-34.vercel.app`.
-3. **Redirect URLs:** add:
+2. **Site URL:** your main app URL (pick one primary), e.g. `https://billycon.vercel.app` or `https://web-iota-lilac-34.vercel.app`.
+3. **Redirect URLs:** add every origin you use:
+   - `https://billycon.vercel.app/**`
    - `https://web-iota-lilac-34.vercel.app/**`
    - `http://localhost:**` (optional, for local web)
 
