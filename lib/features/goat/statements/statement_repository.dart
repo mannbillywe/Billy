@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -6,7 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../services/supabase_service.dart';
+import 'statement_classification_service.dart';
 import 'statement_dedupe.dart';
+import 'statement_pdf_text_service.dart';
 import 'statement_tabular_engine.dart';
 
 String statementSourceTypeToDb(StatementFileKind k) => switch (k) {
@@ -15,8 +18,15 @@ String statementSourceTypeToDb(StatementFileKind k) => switch (k) {
       StatementFileKind.csv => 'csv',
       StatementFileKind.xls => 'xls',
       StatementFileKind.xlsx => 'xlsx',
+      StatementFileKind.image => 'image',
       StatementFileKind.unsupported => 'csv',
     };
+
+String? amountRepresentationFromMapping(ColumnMapping m) {
+  if (m.debitCol != null || m.creditCol != null) return 'debit_credit_columns';
+  if (m.amountCol != null) return 'signed_amount';
+  return null;
+}
 
 class StatementRepository {
   StatementRepository._();
@@ -63,6 +73,9 @@ class StatementRepository {
     int transactionCount = 0,
     String importMode = 'smart',
     Map<String, dynamic> metadata = const {},
+    String? mimeType,
+    String? sourceHint,
+    String? documentFamily,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
@@ -79,6 +92,10 @@ class StatementRepository {
       'import_mode': importMode,
       'metadata': metadata,
       'parser_version': 'billy-goat-statements-1',
+      'extractor_version': 'billy-goat-extract-1',
+      if (mimeType != null && mimeType.isNotEmpty) 'mime_type': mimeType,
+      if (sourceHint != null && sourceHint.isNotEmpty) 'source_hint': sourceHint,
+      if (documentFamily != null && documentFamily.isNotEmpty) 'document_family': documentFamily,
     });
     return id;
   }
@@ -115,6 +132,136 @@ class StatementRepository {
     await _c.from('statement_imports').update(u).eq('id', id).eq('user_id', uid);
   }
 
+  static Future<void> updateImportExtended(
+    String id, {
+    double? openingBalance,
+    double? closingBalance,
+    double? totalDebit,
+    double? totalCredit,
+    String? amountRepresentation,
+    String? documentFamily,
+    String? accountHolderName,
+    bool? hasRunningBalance,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final u = <String, dynamic>{};
+    if (openingBalance != null) u['opening_balance'] = openingBalance;
+    if (closingBalance != null) u['closing_balance'] = closingBalance;
+    if (totalDebit != null) u['total_debit'] = totalDebit;
+    if (totalCredit != null) u['total_credit'] = totalCredit;
+    if (amountRepresentation != null) u['amount_representation'] = amountRepresentation;
+    if (documentFamily != null) u['document_family'] = documentFamily;
+    if (accountHolderName != null) u['account_holder_name'] = accountHolderName;
+    if (hasRunningBalance != null) u['has_running_balance'] = hasRunningBalance;
+    if (u.isEmpty) return;
+    await _c.from('statement_imports').update(u).eq('id', id).eq('user_id', uid);
+  }
+
+  static const _rawExcerptMaxChars = 12000;
+
+  static Future<String?> buildRawTextExcerpt(Uint8List bytes, StatementFormatDetection det) async {
+    switch (det.kind) {
+      case StatementFileKind.csv:
+        final t = utf8.decode(bytes, allowMalformed: true);
+        return t.length > _rawExcerptMaxChars ? t.substring(0, _rawExcerptMaxChars) : t;
+      case StatementFileKind.pdfDigital:
+      case StatementFileKind.pdfScanned:
+        final g = await StatementPdfTextService.extractGrid(bytes);
+        final buf = StringBuffer();
+        for (final row in g.grid.take(250)) {
+          buf.writeln(row.map((c) => c.replaceAll('\n', ' ')).join('\t'));
+        }
+        final s = buf.toString().trim();
+        if (s.isEmpty) return null;
+        return s.length > _rawExcerptMaxChars ? s.substring(0, _rawExcerptMaxChars) : s;
+      case StatementFileKind.xlsx:
+      case StatementFileKind.xls:
+      case StatementFileKind.image:
+      case StatementFileKind.unsupported:
+        return null;
+    }
+  }
+
+  /// Layer-1 audit row (raw text excerpt + metadata). Safe to call after [createImportRow].
+  static Future<void> insertStatementRawExtraction({
+    required String importId,
+    String? rawText,
+    Map<String, dynamic>? rawTables,
+    Map<String, dynamic>? ocrJson,
+    int? pageCount,
+    Map<String, dynamic> extractionMeta = const {},
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    await _c.from('statement_raw_extractions').insert({
+      'import_id': importId,
+      'user_id': uid,
+      'raw_text': rawText,
+      'raw_tables': rawTables,
+      'ocr_json': ocrJson,
+      'page_count': pageCount,
+      'extraction_meta': extractionMeta,
+    });
+  }
+
+  static Future<void> persistRawExtractionLayer({
+    required String importId,
+    required Uint8List bytes,
+    required StatementFormatDetection detection,
+    StatementParseOutcome? parse,
+    String? rawTextExcerpt,
+  }) async {
+    final excerpt = rawTextExcerpt ?? await buildRawTextExcerpt(bytes, detection);
+    final meta = <String, dynamic>{
+      'parser_version': 'billy-goat-statements-1',
+      'file_kind': detection.kind.name,
+      if (detection.note != null) 'detection_note': detection.note,
+      if (parse != null) 'parse_confidence': parse.confidence,
+      if (parse != null && parse.warnings.isNotEmpty) 'parse_warnings': parse.warnings,
+    };
+    await insertStatementRawExtraction(
+      importId: importId,
+      rawText: excerpt,
+      extractionMeta: meta,
+    );
+  }
+
+  static Future<void> insertStatementRowReview({
+    required String importId,
+    required int rowIndex,
+    required String issueType,
+    required String issueMessage,
+    String? statementTransactionId,
+    Map<String, dynamic> suggestedFix = const {},
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    await _c.from('statement_row_reviews').insert({
+      'user_id': uid,
+      'import_id': importId,
+      'statement_transaction_id': statementTransactionId,
+      'row_index': rowIndex,
+      'issue_type': issueType,
+      'issue_message': issueMessage,
+      'suggested_fix': suggestedFix,
+    });
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchStatementRowReviews({
+    String? importId,
+    int limit = 200,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return [];
+    var q = _c.from('statement_row_reviews').select().eq('user_id', uid);
+    if (importId != null) {
+      q = q.eq('import_id', importId);
+    }
+    final res = await q.order('created_at', ascending: false).limit(limit);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   static String _ymd(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -125,6 +272,7 @@ class StatementRepository {
     required String contentType,
     required StatementFormatDetection detection,
     required StatementParseOutcome parse,
+    String? sourceHint,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
@@ -149,6 +297,8 @@ class StatementRepository {
         'warnings': parse.warnings,
         'detection_note': detection.note,
       },
+      mimeType: contentType,
+      sourceHint: sourceHint,
     );
     final payloads = parse.rows
         .map(
@@ -169,6 +319,18 @@ class StatementRepository {
       statementStartDate: parse.periodStart,
       statementEndDate: parse.periodEnd,
     );
+    await updateImportExtended(
+      id,
+      openingBalance: parse.openingBalance,
+      closingBalance: parse.closingBalance,
+      amountRepresentation: amountRepresentationFromMapping(parse.mapping),
+      hasRunningBalance: parse.mapping.balanceCol != null,
+    );
+    await persistRawExtractionLayer(importId: id, bytes: bytes, detection: detection, parse: parse);
+    final excerpt = await buildRawTextExcerpt(bytes, detection);
+    if (excerpt != null && excerpt.length > 200) {
+      unawaited(StatementClassificationService.classifyImport(importId: id, textExcerpt: excerpt));
+    }
     if (parse.confidence < 58) {
       await insertImportReview(
         importId: id,
@@ -191,6 +353,7 @@ class StatementRepository {
     required StatementFormatDetection detection,
     String reviewType = 'parse_failed',
     Map<String, dynamic> payload = const {},
+    String? sourceHint,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('Not signed in');
@@ -211,7 +374,20 @@ class StatementRepository {
         'detection_note': detection.note,
         if (payload.isNotEmpty) 'review_context': payload,
       },
+      mimeType: contentType,
+      sourceHint: sourceHint,
     );
+    final excerpt = await buildRawTextExcerpt(bytes, detection);
+    await persistRawExtractionLayer(
+      importId: id,
+      bytes: bytes,
+      detection: detection,
+      parse: null,
+      rawTextExcerpt: excerpt,
+    );
+    if (excerpt != null && excerpt.length > 200) {
+      unawaited(StatementClassificationService.classifyImport(importId: id, textExcerpt: excerpt));
+    }
     await insertImportReview(
       importId: id,
       reviewType: reviewType,

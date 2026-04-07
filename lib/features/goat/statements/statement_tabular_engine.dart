@@ -12,6 +12,8 @@ enum StatementFileKind {
   csv,
   xls,
   xlsx,
+  /// UPI screenshot, payment receipt image, or passbook photo (OCR / review path).
+  image,
   unsupported,
 }
 
@@ -137,6 +139,21 @@ class StatementTabularEngine {
         note: 'Legacy .xls is not parsed in-app. Export as CSV or xlsx.',
       );
     }
+    const imageExts = {'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'};
+    const imageMimes = {
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+    };
+    if (imageExts.contains(ext) || (mimeType != null && imageMimes.contains(mimeType.toLowerCase()))) {
+      return const StatementFormatDetection(
+        kind: StatementFileKind.image,
+        confidence: 55,
+        note: 'Image upload — use CSV/PDF for auto-parse, or save for OCR/review.',
+      );
+    }
     if (ext == 'pdf' || mimeType == 'application/pdf') {
       if (!isLikelyTextPdf(bytes)) {
         return const StatementFormatDetection(kind: StatementFileKind.pdfScanned, confidence: 35, note: 'Not a PDF header');
@@ -162,6 +179,7 @@ class StatementTabularEngine {
       case StatementFileKind.pdfDigital:
       case StatementFileKind.pdfScanned:
       case StatementFileKind.xls:
+      case StatementFileKind.image:
       case StatementFileKind.unsupported:
         return [];
     }

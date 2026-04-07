@@ -35,6 +35,8 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
   StatementParseOutcome? _parse;
   ColumnMapping? _mappingOverride;
   String _accountType = 'bank';
+  /// DB [statement_imports.source_hint]; null = auto-detect.
+  String? _sourceHintDb;
   String _importMode = 'smart';
   bool _busy = false;
   StatementCommitResult? _result;
@@ -111,6 +113,16 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
         return 'text/csv';
       case 'xlsx':
         return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+      case 'heif':
+        return 'image/heic';
       default:
         return 'application/octet-stream';
     }
@@ -142,7 +154,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
   Future<void> _pickFile() async {
     final r = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf', 'csv', 'xlsx', 'xls'],
+      allowedExtensions: const ['pdf', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'],
       withData: true,
     );
     if (r == null || r.files.isEmpty) return;
@@ -182,6 +194,16 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
             outcome = StatementTabularEngine.parseGrid(g.grid, mappingOverride: _mappingOverride);
           }
           break;
+        case StatementFileKind.image:
+          outcome = StatementParseOutcome(
+            rows: [],
+            confidence: 0,
+            mapping: _mappingOverride ?? const ColumnMapping(),
+            warnings: const [
+              'Image file — in-app table parsing is not available. Save for review (OCR pipeline) or upload CSV/PDF export.',
+            ],
+          );
+          break;
         case StatementFileKind.xls:
         case StatementFileKind.unsupported:
           outcome = null;
@@ -205,7 +227,11 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
     final bytes = _bytes;
     final det = _detection;
     if (bytes == null || det == null) return;
-    if (det.kind == StatementFileKind.xls || det.kind == StatementFileKind.unsupported) return;
+    if (det.kind == StatementFileKind.xls ||
+        det.kind == StatementFileKind.unsupported ||
+        det.kind == StatementFileKind.image) {
+      return;
+    }
 
     setState(() => _busy = true);
     try {
@@ -243,6 +269,9 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
             });
           }
           break;
+        case StatementFileKind.image:
+          setState(() => _busy = false);
+          break;
         case StatementFileKind.xls:
         case StatementFileKind.unsupported:
           setState(() => _busy = false);
@@ -271,6 +300,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
         contentType: _mime,
         detection: det,
         reviewType: 'empty_or_unparsed',
+        sourceHint: _sourceHintDb,
         payload: {
           'warnings': _parse?.warnings ?? [],
           'confidence': _parse?.confidence,
@@ -283,6 +313,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
       });
       ref.invalidate(statementImportsProvider);
       ref.invalidate(statementImportReviewsProvider);
+      ref.invalidate(statementRowReviewsAllProvider);
     } catch (e) {
       setState(() {
         _busy = false;
@@ -311,6 +342,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
         contentType: _mime,
         detection: det,
         parse: parse,
+        sourceHint: _sourceHintDb,
       );
       final res = await StatementRepository.commitParsedTransactions(
         importId: importId,
@@ -333,6 +365,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
       ref.invalidate(statementDocumentLinksProvider);
       ref.invalidate(canonicalFinancialEventsProvider);
       ref.invalidate(statementImportReviewsProvider);
+      ref.invalidate(statementRowReviewsAllProvider);
       ref.invalidate(goatLensWeekDebitSpendProvider);
       ref.invalidate(goatForecastProvider);
       ref.invalidate(documentsProvider);
@@ -346,7 +379,10 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
 
   bool get _canParseKind {
     final k = _detection?.kind;
-    return k == StatementFileKind.csv || k == StatementFileKind.xlsx || k == StatementFileKind.pdfDigital || k == StatementFileKind.pdfScanned;
+    return k == StatementFileKind.csv ||
+        k == StatementFileKind.xlsx ||
+        k == StatementFileKind.pdfDigital ||
+        k == StatementFileKind.pdfScanned;
   }
 
   @override
@@ -398,7 +434,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
               Text('Drop file (web)', style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               Text(
-                'Drag and drop a PDF, CSV, or XLSX here.',
+                'Drag and drop PDF, CSV, XLSX, or payment images (PNG/JPEG/WebP).',
                 style: TextStyle(color: GoatTokens.textMuted, fontSize: 12, height: 1.35),
               ),
               const SizedBox(height: 12),
@@ -433,7 +469,7 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
             Text('Choose file', style: TextStyle(color: GoatTokens.textPrimary, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Text(
-              'PDF, CSV, or XLSX · max 15 MB. Legacy .xls: export to CSV or xlsx first.',
+              'PDF, CSV, XLSX, images (PNG/JPEG/WebP/HEIC) · max 15 MB. Legacy .xls: export to CSV or XLSX first.',
               style: TextStyle(color: GoatTokens.textMuted, fontSize: 12, height: 1.35),
             ),
             const SizedBox(height: 12),
@@ -444,6 +480,30 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
             ),
           ],
         ),
+      ),
+      const SizedBox(height: 12),
+      Text('Document hint (optional)', style: TextStyle(color: GoatTokens.textMuted, fontSize: 12)),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<String?>(
+        value: _sourceHintDb,
+        decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'What is this file?'),
+        dropdownColor: GoatTokens.surface,
+        style: TextStyle(color: GoatTokens.textPrimary),
+        items: [
+          DropdownMenuItem<String?>(
+            value: null,
+            child: Text('Auto-detect', style: TextStyle(color: GoatTokens.textPrimary)),
+          ),
+          DropdownMenuItem(value: 'bank_statement', child: Text('Bank statement', style: TextStyle(color: GoatTokens.textPrimary))),
+          DropdownMenuItem(value: 'credit_card_statement', child: Text('Credit card statement', style: TextStyle(color: GoatTokens.textPrimary))),
+          DropdownMenuItem(value: 'wallet_statement', child: Text('Wallet / payment export', style: TextStyle(color: GoatTokens.textPrimary))),
+          DropdownMenuItem(value: 'upi_receipt', child: Text('UPI / payment receipt', style: TextStyle(color: GoatTokens.textPrimary))),
+          DropdownMenuItem(
+            value: 'unknown_financial_document',
+            child: Text('Unknown — treat as generic', style: TextStyle(color: GoatTokens.textPrimary)),
+          ),
+        ],
+        onChanged: (v) => setState(() => _sourceHintDb = v),
       ),
       const SizedBox(height: 12),
       Text('Account type (optional)', style: TextStyle(color: GoatTokens.textMuted, fontSize: 12)),
@@ -469,13 +529,22 @@ class _StatementUploadWizardScreenState extends ConsumerState<StatementUploadWiz
     final det = _detection;
     final p = _parse;
     return [
-      if (det?.kind == StatementFileKind.xls || det?.kind == StatementFileKind.unsupported)
+      if (det?.kind == StatementFileKind.xls ||
+          det?.kind == StatementFileKind.unsupported ||
+          det?.kind == StatementFileKind.image)
         GoatPremiumCard(
           accentBorder: false,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(det?.note ?? 'Unsupported format.', style: TextStyle(color: GoatTokens.textMuted, height: 1.4)),
+              if (det?.kind == StatementFileKind.image) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'We still store the original file and raw layer for reprocessing. Save for review to queue it for OCR or manual handling.',
+                  style: TextStyle(color: GoatTokens.textMuted, fontSize: 12, height: 1.35),
+                ),
+              ],
               const SizedBox(height: 12),
               if (det != null && _bytes != null)
                 OutlinedButton(

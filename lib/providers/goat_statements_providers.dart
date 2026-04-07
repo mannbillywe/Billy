@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../features/goat/statements/goat_analysis_lens.dart';
+import '../features/goat/statements/goat_lens_datasets.dart';
 import '../features/goat/statements/statement_repository.dart';
 import '../features/goat/utils/goat_dashboard_helpers.dart';
 import 'documents_provider.dart';
@@ -52,6 +52,15 @@ final statementImportReviewsProvider = FutureProvider<List<Map<String, dynamic>>
   return _safeStatements(() => StatementRepository.fetchImportReviews(limit: 200));
 });
 
+final statementRowReviewsAllProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return _safeStatements(() => StatementRepository.fetchStatementRowReviews(limit: 300));
+});
+
+final statementRowReviewsForImportProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, importId) async {
+  return _safeStatements(() => StatementRepository.fetchStatementRowReviews(importId: importId, limit: 200));
+});
+
 final statementTransactionDetailProvider =
     FutureProvider.autoDispose.family<StatementTransactionDetailBundle?, String>((ref, id) async {
   final txn = await StatementRepository.fetchTransactionById(id);
@@ -67,39 +76,17 @@ final goatLensWeekDebitSpendProvider = FutureProvider<double>((ref) async {
     final lens = ref.watch(goatAnalysisLensProvider);
     final basis = ref.watch(weekSpendBasisProvider);
     const windowDays = 7;
-
-    Future<double> docDebitByBasis() async {
-      final docs = await ref.watch(documentsProvider.future);
-      return spendLastDaysByBasis(docs, windowDays, basis);
-    }
-
-    Future<double> stmtDebitSum() async {
-      final rows = await ref.watch(statementTransactionsProvider.future);
-      return sumStatementDebitsLastDays(rows, windowDays);
-    }
-
-    switch (lens) {
-      case GoatAnalysisLens.ocrOnly:
-        return docDebitByBasis();
-      case GoatAnalysisLens.statementsOnly:
-        return stmtDebitSum();
-      case GoatAnalysisLens.combinedRaw:
-        return (await docDebitByBasis()) + (await stmtDebitSum());
-      case GoatAnalysisLens.smart:
-        final docs = await ref.watch(documentsProvider.future);
-        final stmts = await ref.watch(statementTransactionsProvider.future);
-        final links = await ref.watch(statementDocumentLinksProvider.future);
-        final excludedDocs = <String>{};
-        for (final l in links) {
-          if (l['is_excluded_from_double_count'] == true) {
-            final id = l['document_id'] as String?;
-            if (id != null) excludedDocs.add(id);
-          }
-        }
-        final docPart = spendLastDaysByBasisExcluding(docs, windowDays, basis, excludedDocs);
-        final stmtPart = sumStatementDebitsLastDays(stmts, windowDays);
-        return docPart + stmtPart;
-    }
+    final docs = await ref.watch(documentsProvider.future);
+    final stmts = await ref.watch(statementTransactionsProvider.future);
+    final links = await ref.watch(statementDocumentLinksProvider.future);
+    return GoatLensDatasets.weekDebitSpendForLens(
+      lens: lens,
+      basis: basis,
+      documents: docs,
+      statementTransactions: stmts,
+      documentLinks: links,
+      windowDays: windowDays,
+    );
   } catch (_) {
     final docs = await ref.watch(documentsProvider.future);
     final basis = ref.read(weekSpendBasisProvider);
