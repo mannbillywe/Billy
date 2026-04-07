@@ -100,7 +100,7 @@ class _GoatModeHomeCtaState extends ConsumerState<GoatModeHomeCta> {
                         const SizedBox(height: 4),
                         Text(
                           goatOn
-                              ? 'Bills, recurring, cash-flow forecast'
+                              ? 'Bills, recurring, forecast — import statements from the upload icon in GOAT header or Statements on Home'
                               : 'Tap to open — enable workspace if you see the lock screen',
                           style: TextStyle(
                             fontSize: 12,

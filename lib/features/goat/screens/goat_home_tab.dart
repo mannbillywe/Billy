@@ -127,6 +127,11 @@ class GoatHomeTab extends ConsumerWidget {
               }),
             ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            '7-day spend uses the lens (top) for bank/receipt mix; Upload/Bill/Both applies to receipt documents only — statement lines use posted dates.',
+            style: TextStyle(color: GoatTokens.textMuted.withValues(alpha: 0.9), fontSize: 10, height: 1.35),
+          ),
           const SizedBox(height: 16),
           Text(
             'Command center',

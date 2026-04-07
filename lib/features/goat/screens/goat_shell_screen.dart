@@ -8,6 +8,7 @@ import '../goat_profile.dart';
 import '../widgets/goat_analysis_lens_bar.dart';
 import '../widgets/goat_header_banner.dart';
 import 'goat_profile_gate_screens.dart';
+import '../statements/screens/goat_statements_hub_screen.dart';
 import 'goat_forecast_screen.dart';
 import 'goat_goals_screen.dart';
 import 'goat_home_tab.dart';
@@ -73,7 +74,14 @@ class _GoatShellScreenState extends ConsumerState<GoatShellScreen> {
             backgroundColor: GoatTokens.background,
             body: Column(
               children: [
-                GoatHeaderBanner(onExit: () => Navigator.of(context).maybePop()),
+                GoatHeaderBanner(
+                  onExit: () => Navigator.of(context).maybePop(),
+                  onOpenStatements: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const GoatStatementsHubScreen()),
+                    );
+                  },
+                ),
                 const GoatAnalysisLensBar(),
                 Expanded(
                   child: IndexedStack(

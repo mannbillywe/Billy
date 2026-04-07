@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/goat/statements/goat_analysis_lens.dart';
 import '../features/goat/statements/statement_repository.dart';
-import 'goat_lens_provider.dart';
+import '../features/goat/utils/goat_dashboard_helpers.dart';
 import 'documents_provider.dart';
+import 'goat_lens_provider.dart';
+import 'week_spend_basis_provider.dart';
 
 /// Loaded once for the statement transaction detail screen.
 class StatementTransactionDetailBundle {
@@ -59,50 +61,30 @@ final statementTransactionDetailProvider =
   return StatementTransactionDetailBundle(txn: txn, links: links, categories: categories);
 });
 
-/// 7-day debit spend for GOAT home, respecting [goatAnalysisLensProvider].
+/// 7-day debit spend for GOAT home: [goatAnalysisLensProvider] + same window/basis as home “7-day spend” for receipts.
 final goatLensWeekDebitSpendProvider = FutureProvider<double>((ref) async {
   try {
     final lens = ref.watch(goatAnalysisLensProvider);
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 7));
+    final basis = ref.watch(weekSpendBasisProvider);
+    const windowDays = 7;
 
-    Future<double> docDebitSum() async {
+    Future<double> docDebitByBasis() async {
       final docs = await ref.watch(documentsProvider.future);
-      var s = 0.0;
-      for (final d in docs) {
-        if ((d['status'] as String?) == 'draft') continue;
-        final raw = d['date']?.toString();
-        final dt = DateTime.tryParse(raw ?? '');
-        if (dt == null) continue;
-        final day = DateTime(dt.year, dt.month, dt.day);
-        if (day.isBefore(start)) continue;
-        s += (d['amount'] as num?)?.toDouble() ?? 0;
-      }
-      return s;
+      return spendLastDaysByBasis(docs, windowDays, basis);
     }
 
     Future<double> stmtDebitSum() async {
       final rows = await ref.watch(statementTransactionsProvider.future);
-      var s = 0.0;
-      for (final t in rows) {
-        if ((t['direction'] as String?) != 'debit') continue;
-        if ((t['status'] as String?) != 'active') continue;
-        final dt = DateTime.tryParse(t['txn_date']?.toString() ?? '');
-        if (dt == null) continue;
-        final day = DateTime(dt.year, dt.month, dt.day);
-        if (day.isBefore(start)) continue;
-        s += (t['amount'] as num?)?.toDouble() ?? 0;
-      }
-      return s;
+      return sumStatementDebitsLastDays(rows, windowDays);
     }
 
     switch (lens) {
       case GoatAnalysisLens.ocrOnly:
-        return docDebitSum();
+        return docDebitByBasis();
       case GoatAnalysisLens.statementsOnly:
         return stmtDebitSum();
       case GoatAnalysisLens.combinedRaw:
-        return (await docDebitSum()) + (await stmtDebitSum());
+        return (await docDebitByBasis()) + (await stmtDebitSum());
       case GoatAnalysisLens.smart:
         final docs = await ref.watch(documentsProvider.future);
         final stmts = await ref.watch(statementTransactionsProvider.future);
@@ -114,44 +96,13 @@ final goatLensWeekDebitSpendProvider = FutureProvider<double>((ref) async {
             if (id != null) excludedDocs.add(id);
           }
         }
-        var s = 0.0;
-        for (final d in docs) {
-          if ((d['status'] as String?) == 'draft') continue;
-          final id = d['id'] as String?;
-          if (id != null && excludedDocs.contains(id)) continue;
-          if (d['exclude_from_goat_smart_analytics'] == true) continue;
-          final raw = d['date']?.toString();
-          final dt = DateTime.tryParse(raw ?? '');
-          if (dt == null) continue;
-          final day = DateTime(dt.year, dt.month, dt.day);
-          if (day.isBefore(start)) continue;
-          s += (d['amount'] as num?)?.toDouble() ?? 0;
-        }
-        for (final t in stmts) {
-          if ((t['direction'] as String?) != 'debit') continue;
-          if ((t['status'] as String?) != 'active') continue;
-          final dt = DateTime.tryParse(t['txn_date']?.toString() ?? '');
-          if (dt == null) continue;
-          final day = DateTime(dt.year, dt.month, dt.day);
-          if (day.isBefore(start)) continue;
-          s += (t['amount'] as num?)?.toDouble() ?? 0;
-        }
-        return s;
+        final docPart = spendLastDaysByBasisExcluding(docs, windowDays, basis, excludedDocs);
+        final stmtPart = sumStatementDebitsLastDays(stmts, windowDays);
+        return docPart + stmtPart;
     }
   } catch (_) {
     final docs = await ref.watch(documentsProvider.future);
-    var s = 0.0;
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 7));
-    for (final d in docs) {
-      if ((d['status'] as String?) == 'draft') continue;
-      final raw = d['date']?.toString();
-      final dt = DateTime.tryParse(raw ?? '');
-      if (dt == null) continue;
-      final day = DateTime(dt.year, dt.month, dt.day);
-      if (day.isBefore(start)) continue;
-      s += (d['amount'] as num?)?.toDouble() ?? 0;
-    }
-    return s;
+    final basis = ref.read(weekSpendBasisProvider);
+    return spendLastDaysByBasis(docs, 7, basis);
   }
 });

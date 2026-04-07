@@ -3,9 +3,15 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/goat_theme.dart';
 
 class GoatHeaderBanner extends StatelessWidget {
-  const GoatHeaderBanner({super.key, required this.onExit});
+  const GoatHeaderBanner({
+    super.key,
+    required this.onExit,
+    this.onOpenStatements,
+  });
 
   final VoidCallback onExit;
+  /// Bank/card statement import (hub). Always visible so upload is not buried under Home scroll.
+  final VoidCallback? onOpenStatements;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +77,18 @@ class GoatHeaderBanner extends StatelessWidget {
               ],
             ),
             const Spacer(),
+            if (onOpenStatements != null)
+              IconButton(
+                onPressed: onOpenStatements,
+                tooltip: 'Statements & import',
+                style: IconButton.styleFrom(
+                  backgroundColor: GoatTokens.surfaceElevated,
+                  foregroundColor: GoatTokens.gold,
+                  side: BorderSide(color: GoatTokens.gold.withValues(alpha: 0.35)),
+                ),
+                icon: const Icon(Icons.upload_file_outlined, size: 20),
+              ),
+            if (onOpenStatements != null) const SizedBox(width: 6),
             IconButton(
               onPressed: onExit,
               tooltip: 'Back to Billy',

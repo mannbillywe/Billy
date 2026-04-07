@@ -59,6 +59,50 @@ double spendLastDaysByBasis(List<Map<String, dynamic>> all, int days, WeekSpendB
   return sum;
 }
 
+/// Same window and basis as [spendLastDaysByBasis], but skips documents whose `id` is in [excludedDocIds].
+double spendLastDaysByBasisExcluding(
+  List<Map<String, dynamic>> all,
+  int days,
+  WeekSpendBasis basis,
+  Set<String> excludedDocIds,
+) {
+  final now = DateTime.now();
+  final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+  final start = end.subtract(Duration(days: days - 1));
+  var sum = 0.0;
+  for (final d in all) {
+    if ((d['status'] as String?) == 'draft') continue;
+    final id = d['id'] as String?;
+    if (id != null && excludedDocIds.contains(id)) continue;
+    if (d['exclude_from_goat_smart_analytics'] == true) continue;
+    final day = _activityDayForSpend(d, basis);
+    if (day == null) continue;
+    if (!day.isBefore(start) && !day.isAfter(end)) {
+      sum += (d['amount'] as num?)?.toDouble() ?? 0;
+    }
+  }
+  return sum;
+}
+
+/// Active statement debits in the same rolling window as [spendLastDaysByBasis] (posted `txn_date`).
+double sumStatementDebitsLastDays(List<Map<String, dynamic>> statementRows, int days) {
+  final now = DateTime.now();
+  final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+  final start = end.subtract(Duration(days: days - 1));
+  var sum = 0.0;
+  for (final t in statementRows) {
+    if ((t['direction'] as String?) != 'debit') continue;
+    if ((t['status'] as String?) != 'active') continue;
+    final dt = DateTime.tryParse(t['txn_date']?.toString() ?? '');
+    if (dt == null) continue;
+    final day = DateTime(dt.year, dt.month, dt.day);
+    if (!day.isBefore(start) && !day.isAfter(end)) {
+      sum += (t['amount'] as num?)?.toDouble() ?? 0;
+    }
+  }
+  return sum;
+}
+
 /// Total spend in the last [days] calendar days using bill date only (legacy).
 double spendLastDays(List<Map<String, dynamic>> all, int days) =>
     spendLastDaysByBasis(all, days, WeekSpendBasis.invoiceDate);
