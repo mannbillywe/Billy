@@ -2,8 +2,10 @@
 #
 # Required GitHub repo secrets (Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN        — https://vercel.com/account/tokens
-#   VERCEL_ORG_ID       — Vercel → Team Settings → Team ID
-#   VERCEL_PROJECT_ID   — Vercel → Project (e.g. web-iota-lilac-34) → Settings → General → Project ID
+#   VERCEL_ORG_ID       — Same as Team ID on Team → Settings → General (starts with team_).
+#                         Only the team page shows this; it is NOT the Project ID.
+#   VERCEL_PROJECT_ID   — Per deployment target: open the PROJECT (dashboard tile) → Settings → General → Project ID (prj_...).
+#                         Repeat for each site (web-iota vs billycon) if you use different projects.
 #
 # Optional (override embedded Supabase in lib/config/supabase_config.dart):
 #   SUPABASE_URL
