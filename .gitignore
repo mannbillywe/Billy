@@ -40,3 +40,4 @@ scripts/.billy-cursor-step
 # OS
 .DS_Store
 Thumbs.db
+.vercel
