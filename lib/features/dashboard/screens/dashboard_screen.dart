@@ -5,15 +5,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/billy_theme.dart';
 import '../../../core/utils/document_date_range.dart';
+import '../../../providers/budgets_provider.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/recurring_provider.dart';
+import '../../../providers/usage_limits_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/utils/document_backdate_hint.dart';
-import '../../goat/widgets/goat_mode_home_cta.dart';
+import '../../transactions/screens/transaction_detail_screen.dart';
 import '../utils/dashboard_spend_math.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
+import '../widgets/money_os_cards.dart';
 import '../widgets/ocr_banner.dart';
 import '../widgets/quick_actions.dart';
 import '../widgets/recent_activity.dart';
@@ -27,7 +31,6 @@ class DashboardScreen extends ConsumerWidget {
     this.onCreateBill,
     this.onOpenAllDocuments,
     this.onOpenDocumentDetail,
-    this.onOpenGoatMode,
   });
 
   final VoidCallback? onOpenScan;
@@ -35,7 +38,6 @@ class DashboardScreen extends ConsumerWidget {
   final VoidCallback? onCreateBill;
   final void Function(String documentId)? onOpenDocumentDetail;
   final VoidCallback? onOpenAllDocuments;
-  final VoidCallback? onOpenGoatMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,6 +45,9 @@ class DashboardScreen extends ConsumerWidget {
     final lbAsync = ref.watch(lendBorrowProvider);
     final profile = ref.watch(profileProvider).valueOrNull;
     final currency = profile?['preferred_currency'] as String?;
+    final budgets = ref.watch(budgetsProvider).valueOrNull ?? [];
+    final recurring = ref.watch(recurringSeriesProvider).valueOrNull ?? [];
+    final usageLimits = ref.watch(usageLimitsProvider).valueOrNull;
 
     final allDocs = docsAsync.valueOrNull ?? [];
     final uid = Supabase.instance.client.auth.currentUser?.id;
@@ -130,43 +135,6 @@ class DashboardScreen extends ConsumerWidget {
                 backgroundColor: BillyTheme.gray100,
               ),
             ),
-          Text(
-            'Last 7 days (same as Analytics 1W) — count by',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BillyTheme.gray600),
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<WeekSpendBasis>(
-            segments: const [
-              ButtonSegment<WeekSpendBasis>(
-                value: WeekSpendBasis.uploadDate,
-                label: Text('Upload date'),
-                icon: Icon(Icons.cloud_upload_outlined, size: 16),
-              ),
-              ButtonSegment<WeekSpendBasis>(
-                value: WeekSpendBasis.invoiceDate,
-                label: Text('Bill date'),
-                icon: Icon(Icons.receipt_long_outlined, size: 16),
-              ),
-              ButtonSegment<WeekSpendBasis>(
-                value: WeekSpendBasis.hybrid,
-                label: Text('Both'),
-                icon: Icon(Icons.merge_type_outlined, size: 16),
-              ),
-            ],
-            selected: {weekBasis},
-            onSelectionChanged: (next) {
-              ref.read(weekSpendBasisProvider.notifier).setBasis(next.first);
-            },
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              foregroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) return BillyTheme.emerald700;
-                return BillyTheme.gray600;
-              }),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (onOpenGoatMode != null) GoatModeHomeCta(onPressed: onOpenGoatMode!),
           SpendHero(
             weekSpend: weekSpend,
             currencyCode: currency,
@@ -181,35 +149,57 @@ class DashboardScreen extends ConsumerWidget {
             friendAddedThisWeekCollect: addedLb.collect,
             friendAddedThisWeekPay: addedLb.pay,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          QuickActions(
+            onCreateBill: onCreateBill,
+            onOpenAllDocuments: onOpenAllDocuments,
+            onExportData: onExportData,
+          ),
+          // ── OCR usage pill ──
+          if (usageLimits != null) ...[
+            const SizedBox(height: 10),
+            OcrUsageCard(
+              used: (usageLimits['ocr_scans_used'] as num?)?.toInt() ?? 0,
+              limit: (usageLimits['ocr_scans_limit'] as num?)?.toInt() ?? 5,
+            ),
+          ],
+          // ── Budget status ──
+          if (budgets.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            BudgetStatusCard(
+              budgets: budgets,
+              docs: allDocs,
+              currencyCode: currency,
+              onViewAll: () {
+                // Switch to Plan tab
+              },
+            ),
+          ],
+          // ── Upcoming recurring bills ──
+          if (recurring.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            UpcomingBillsCard(
+              recurringItems: recurring,
+              currencyCode: currency,
+            ),
+          ],
+          const SizedBox(height: 16),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Expanded(child: MoneyFlowChart(data: dailyData)),
+              const SizedBox(width: 12),
               Expanded(
-                child: QuickActions(
-                  onCreateBill: onCreateBill,
-                  onOpenAllDocuments: onOpenAllDocuments,
-                  onExportData: onExportData,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  children: [
-                    MoneyFlowChart(data: dailyData),
-                    const SizedBox(height: 16),
-                    InsightsCard(
-                      totalExpenses: totalExpenses,
-                      categories: categories.take(4).toList(),
-                      currencyCode: currency,
-                    ),
-                  ],
+                child: InsightsCard(
+                  totalExpenses: totalExpenses,
+                  categories: categories.take(4).toList(),
+                  allCategories: categories,
+                  currencyCode: currency,
+                  docs: insightDocs.toList(),
+                  onOpenDocumentDetail: onOpenDocumentDetail,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          OcrBanner(onManualEntry: onCreateBill),
           if (recentItems.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(

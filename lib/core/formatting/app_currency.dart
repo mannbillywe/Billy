@@ -4,8 +4,17 @@ import 'package:intl/intl.dart';
 class AppCurrency {
   AppCurrency._();
 
+  static final RegExp _iso4217 = RegExp(r'^[A-Z]{3}$');
+
+  /// Normalizes profile currency: invalid or non–3-letter codes fall back to USD so intl does not emit odd prefixes.
+  static String normalizedCurrencyCode(String? iso4217) {
+    final raw = iso4217?.trim().toUpperCase() ?? '';
+    if (raw.isEmpty || !_iso4217.hasMatch(raw)) return 'USD';
+    return raw;
+  }
+
   static NumberFormat formatter(String? iso4217) {
-    final code = (iso4217 == null || iso4217.trim().isEmpty) ? 'USD' : iso4217.trim().toUpperCase();
+    final code = normalizedCurrencyCode(iso4217);
     try {
       return NumberFormat.simpleCurrency(name: code);
     } catch (_) {

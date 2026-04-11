@@ -1,22 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/telemetry/goat_telemetry.dart';
 import '../../core/theme/billy_theme.dart';
-import '../../core/theme/goat_theme.dart';
-import '../../features/goat/goat_profile.dart';
 import '../../providers/profile_provider.dart';
 
 class BillyHeader extends ConsumerWidget {
-  const BillyHeader({super.key, required this.onOpenGoatMode});
+  const BillyHeader({super.key, required this.onOpenSettings});
 
-  final VoidCallback onOpenGoatMode;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider).valueOrNull;
-    final goat = parseProfileGoatAccess(profile);
-    final showGoatEntry = profile != null;
+    final displayName = profile?['display_name'] as String?;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -42,57 +38,6 @@ class BillyHeader extends ConsumerWidget {
               ),
             ),
           ),
-          if (showGoatEntry) ...[
-            const SizedBox(width: 10),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  logGoatEvent('goat_header_chip_clicked');
-                  onOpenGoatMode();
-                },
-                borderRadius: BorderRadius.circular(999),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: goat
-                        ? LinearGradient(
-                            colors: [
-                              GoatTokens.gold.withValues(alpha: 0.2),
-                              GoatTokens.goldDeep.withValues(alpha: 0.12),
-                            ],
-                          )
-                        : null,
-                    color: goat ? null : BillyTheme.gray100,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: goat ? GoatTokens.gold.withValues(alpha: 0.35) : BillyTheme.gray300,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.workspace_premium_rounded,
-                        size: 16,
-                        color: goat ? GoatTokens.gold.withValues(alpha: 0.95) : BillyTheme.gray600,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'GOAT',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2,
-                          color: BillyTheme.gray800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -107,7 +52,7 @@ class BillyHeader extends ConsumerWidget {
                   ),
                 ),
                 Text(
-                  'Billy',
+                  displayName ?? 'Billy',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
@@ -115,6 +60,23 @@ class BillyHeader extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onOpenSettings,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: BillyTheme.gray100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.settings_outlined, size: 22, color: BillyTheme.gray600),
+              ),
             ),
           ),
         ],

@@ -6,6 +6,7 @@ import '../../../core/theme/billy_theme.dart';
 import '../../documents/models/document_category_source.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
+import '../../../providers/transactions_provider.dart';
 import '../../../services/supabase_service.dart';
 
 class AddExpenseSheet extends ConsumerStatefulWidget {
@@ -55,11 +56,13 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       final currencyCode =
           ref.read(profileProvider).valueOrNull?['preferred_currency'] as String? ?? 'INR';
       final catId = await SupabaseService.resolveCategoryIdByName(_category);
-      await ref.read(documentsProvider.notifier).addDocument(
+      final dateStr = DateFormat('yyyy-MM-dd').format(_date);
+      final notes = _descCtrl.text.trim();
+      final docId = await ref.read(documentsProvider.notifier).addDocument(
         vendorName: vendor,
         amount: amount,
         taxAmount: 0,
-        date: DateFormat('yyyy-MM-dd').format(_date),
+        date: dateStr,
         type: _type,
         description: _category,
         paymentMethod: null,
@@ -67,9 +70,24 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         extractedData: {
           'category': _category,
           'source': 'manual',
+          if (notes.isNotEmpty) 'notes': notes,
         },
         categoryId: catId,
         categorySource: DocumentCategorySource.manual,
+      );
+      await ref.read(transactionsProvider.notifier).addTransaction(
+        amount: amount,
+        date: dateStr,
+        type: 'expense',
+        title: vendor,
+        sourceType: 'manual',
+        description: _category,
+        categoryId: catId,
+        categorySource: DocumentCategorySource.manual,
+        currency: currencyCode,
+        sourceDocumentId: docId,
+        effectiveAmount: amount,
+        notes: notes.isNotEmpty ? notes : null,
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {

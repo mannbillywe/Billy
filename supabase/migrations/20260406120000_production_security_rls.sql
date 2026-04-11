@@ -16,7 +16,7 @@ returns boolean
 language sql
 security definer
 set search_path = public
-stable
+stableso 
 as $$
   select exists (
     select 1 from public.app_api_keys

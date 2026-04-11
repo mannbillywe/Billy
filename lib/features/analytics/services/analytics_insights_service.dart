@@ -8,13 +8,9 @@ import '../../../config/supabase_config.dart';
 import '../../../core/utils/document_date_range.dart';
 import '../models/analytics_insights_models.dart';
 
-/// Maps to Edge `gemini_scope`. [goat] is honored only when `profiles.goat` is true.
+/// Maps to Edge `gemini_scope` (Billy key chain only).
 enum AnalyticsGeminiScope {
-  /// Main Billy key chain (GEMINI_API_KEY / app_api_keys.gemini).
   billy,
-
-  /// Dedicated GOAT key chain when configured (else server uses Billy chain).
-  goat,
 }
 
 /// Invokes `analytics-insights` (Supabase Edge or Vercel `/api` proxy on hosted web).
@@ -27,15 +23,7 @@ class AnalyticsInsightsService {
       !Uri.base.host.contains('localhost') &&
       !Uri.base.host.startsWith('127.');
 
-  static Map<String, dynamic> _withGeminiScope(
-    Map<String, dynamic> body,
-    AnalyticsGeminiScope geminiScope,
-  ) {
-    if (geminiScope == AnalyticsGeminiScope.goat) {
-      return {...body, 'gemini_scope': 'goat'};
-    }
-    return body;
-  }
+  static Map<String, dynamic> _withGeminiScope(Map<String, dynamic> body, AnalyticsGeminiScope _) => body;
 
   static Future<Map<String, dynamic>> _invoke(Map<String, dynamic> body) async {
     final client = Supabase.instance.client;

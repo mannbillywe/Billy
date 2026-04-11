@@ -16,12 +16,13 @@ class BillyBottomNav extends StatelessWidget {
 
   static const _icons = [
     Icons.home_rounded,
-    Icons.bar_chart_rounded,
+    Icons.timeline_rounded,
     Icons.people_rounded,
-    Icons.settings_rounded,
+    Icons.calendar_month_rounded,
+    Icons.insights_rounded,
   ];
 
-  static const _labels = ['Home', 'Analytics', 'Friends', 'Settings'];
+  static const _labels = ['Home', 'Activity', 'People', 'Plan', 'Insights'];
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +43,7 @@ class BillyBottomNav extends StatelessWidget {
                 children: [
                   ..._buildNavItems(0, 2),
                   const SizedBox(width: 56),
-                  ..._buildNavItems(2, 4),
+                  ..._buildNavItems(2, 5),
                 ],
               ),
             ),
@@ -67,7 +68,7 @@ class BillyBottomNav extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.add, size: 28, color: Colors.white),
+                    child: const Icon(Icons.camera_alt_rounded, size: 26, color: Colors.white),
                   ),
                 ),
               ),

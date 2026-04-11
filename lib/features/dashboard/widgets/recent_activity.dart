@@ -100,7 +100,7 @@ class RecentActivity extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '-${AppCurrency.format(item.amount, currencyCode)}',
+                    '\u2212${AppCurrency.format(item.amount, currencyCode)}',
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
                   ),
                   if (tappable) ...[

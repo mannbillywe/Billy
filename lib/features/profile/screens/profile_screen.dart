@@ -9,7 +9,6 @@ import '../../export/models/export_document.dart';
 import '../../export/screens/export_screen.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
-import '../../goat/goat_profile.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -38,9 +37,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final totalSpend = docs
         .where((d) => (d['status'] as String?) != 'draft')
         .fold<double>(0, (s, d) => s + ((d['amount'] as num?)?.toDouble() ?? 0));
-    final profileRow = ref.watch(profileProvider).valueOrNull;
-    final goatEnabled = parseProfileGoatAccess(profileRow);
-
     return Scaffold(
       backgroundColor: BillyTheme.scaffoldBg,
       appBar: AppBar(
@@ -99,23 +95,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 24),
           const Text('Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
           const SizedBox(height: 12),
-          _SettingsTile(
-            label: 'GOAT access',
-            subtitle: goatEnabled
-                ? 'On — open from Home (card or header) for Recurring & Forecast'
-                : 'Off — open GOAT once and tap “Enable GOAT for my account”, or use GOAT → Prefs',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    goatEnabled
-                        ? 'Open GOAT from the Home tab (dark card) or the GOAT chip in the header.'
-                        : 'From Billy: open GOAT (if you see the lock screen, enable there). Inside GOAT, use Prefs to turn the workspace on or off.',
-                  ),
-                ),
-              );
-            },
-          ),
           _SettingsTile(
             label: 'Notifications',
             onTap: () {
@@ -206,9 +185,8 @@ class _StatBox extends StatelessWidget {
 }
 
 class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({required this.label, required this.onTap, this.subtitle});
+  const _SettingsTile({required this.label, required this.onTap});
   final String label;
-  final String? subtitle;
   final VoidCallback onTap;
 
   @override
@@ -227,16 +205,7 @@ class _SettingsTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: BillyTheme.gray800)),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 4),
-                    Text(subtitle!, style: const TextStyle(fontSize: 12, color: BillyTheme.gray500, height: 1.3)),
-                  ],
-                ],
-              ),
+              child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: BillyTheme.gray800)),
             ),
             const Icon(Icons.chevron_right_rounded, size: 20, color: BillyTheme.gray400),
           ],

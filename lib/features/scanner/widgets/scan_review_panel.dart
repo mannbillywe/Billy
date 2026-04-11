@@ -10,7 +10,9 @@ import '../../../providers/groups_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/social_provider.dart';
+import '../../../providers/transactions_provider.dart';
 import '../../../services/supabase_service.dart';
+import '../../../services/transaction_service.dart';
 import '../../documents/models/document_category_source.dart';
 import '../../groups/screens/group_expenses_screen.dart';
 import '../models/extracted_receipt.dart';
@@ -309,6 +311,32 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             categorySource: DocumentCategorySource.ai,
           );
 
+      // Create canonical transaction(s)
+      String txnType = 'expense';
+      double effectiveAmt = docAmount;
+      if (_useLend) {
+        txnType = _lendType == 'lent' ? 'lend' : 'borrow';
+        effectiveAmt = _lendType == 'lent' ? 0 : docAmount;
+      }
+
+      final txnId = await TransactionService.insertTransaction(
+        amount: docAmount,
+        date: docDate,
+        type: txnType,
+        title: draft.vendorName.isNotEmpty ? draft.vendorName : 'Expense',
+        sourceType: 'scan',
+        description: descParts.isEmpty ? null : descParts.join(', '),
+        categoryId: categoryId,
+        categorySource: DocumentCategorySource.ai,
+        paymentMethod: draft.paymentMethod,
+        currency: draft.currency,
+        sourceDocumentId: savedDocId,
+        effectiveAmount: effectiveAmt,
+        groupId: _useGroup ? _groupId : null,
+        extractedData: extractedPayload,
+      );
+      ref.invalidate(transactionsProvider);
+
       if (_useGroup && _groupId != null) {
         final agg = <String, double>{};
         if (draft.lineItems.isEmpty) {
@@ -324,7 +352,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         }
         final shares = _sharesFromAgg(agg, alloc);
         if (shares.isEmpty) throw StateError('No shares computed');
-        await SupabaseService.createGroupExpense(
+        final geId = await SupabaseService.createGroupExpense(
           groupId: _groupId!,
           title: draft.vendorName.isNotEmpty ? draft.vendorName : 'Invoice split',
           amount: alloc,
@@ -333,6 +361,18 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
           shares: shares,
           documentId: savedDocId,
         );
+        // Link group expense to transaction
+        if (txnId != null) {
+          try {
+            await TransactionService.updateTransaction(
+              id: txnId,
+              updates: {
+                'group_expense_id': geId,
+                'effective_amount': _userShareFromShares(shares, uid, alloc),
+              },
+            );
+          } catch (_) {}
+        }
         ref.invalidate(groupExpensesProvider(_groupId!));
         ref.invalidate(expenseGroupsNotifierProvider);
       }
@@ -489,6 +529,13 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
         documentId: savedDocId,
       );
     }
+  }
+
+  double _userShareFromShares(List<Map<String, dynamic>> shares, String userId, double fallback) {
+    for (final s in shares) {
+      if (s['user_id'] == userId) return (s['share_amount'] as num?)?.toDouble() ?? fallback;
+    }
+    return fallback;
   }
 
   List<Map<String, dynamic>> _sharesFromAgg(Map<String, double> agg, double targetTotal) {
@@ -870,6 +917,65 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             }),
           ),
         ],
+        // Result preview
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: BillyTheme.emerald50,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: BillyTheme.emerald100),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Save preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.emerald700)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.receipt_long, size: 16, color: BillyTheme.emerald600),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Personal expense: ${AppCurrency.format(alloc, currency)}',
+                      style: TextStyle(fontSize: 13, color: BillyTheme.gray700),
+                    ),
+                  ),
+                ],
+              ),
+              if (_useGroup && _groupId != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.group, size: 16, color: BillyTheme.blue400),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Group expense: ${AppCurrency.format(alloc, currency)}',
+                        style: TextStyle(fontSize: 13, color: BillyTheme.gray700),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (_useLend) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.swap_horiz, size: 16, color: BillyTheme.yellow400),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${_lendType == 'lent' ? 'Lent' : 'Borrowed'}: ${AppCurrency.format(alloc, currency)}',
+                        style: TextStyle(fontSize: 13, color: BillyTheme.gray700),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
@@ -890,7 +996,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
               child: FilledButton(
                 onPressed: _saving ? null : _save,
                 style: FilledButton.styleFrom(backgroundColor: BillyTheme.emerald600, padding: const EdgeInsets.symmetric(vertical: 16)),
-                child: _saving ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Save'),
+                child: _saving ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Confirm & Save'),
               ),
             ),
           ],
