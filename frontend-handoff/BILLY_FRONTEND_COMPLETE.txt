@@ -1,0 +1,1258 @@
+    ================================================================================
+    BILLY — COMPLETE FRONTEND HANDOFF FOR AI ASSISTANCE
+    ================================================================================
+
+    Billy is a Flutter financial app for managing invoices, receipts, and expenses.
+    It uses Supabase as the backend, Riverpod for state management, and a server-side
+    Gemini OCR pipeline for document extraction.
+
+    Stack: Flutter 3.11+ · Supabase · Riverpod · Material 3
+
+    KEY RULES:
+    - Feature-first folder structure: lib/features/<feature>/screens/, widgets/, models/
+    - Shared providers live in lib/providers/
+    - Shared services live in lib/services/
+    - Always use BillyTheme colors — never hardcode hex values
+    - Use ConsumerWidget or ConsumerStatefulWidget (Riverpod)
+    - Navigation is Navigator.push(MaterialPageRoute(...)) — no go_router
+    - All currency display should respect profile['preferred_currency']
+    - The app is web-first (deployed on Vercel) but should work on mobile too
+
+
+    ================================================================================
+    PART 1 — ARCHITECTURE & CONVENTIONS
+    ================================================================================
+
+    PROJECT STRUCTURE
+    -----------------
+
+    lib/
+    ├── main.dart                          # Entry point: Supabase init, Sentry, ProviderScope
+    ├── app/
+    │   ├── app.dart                       # BillyApp root widget, auth gate, MaterialApp
+    │   ├── layout_shell.dart              # Main scaffold: tabs, header, bottom nav, FAB
+    │   └── widgets/
+    │       ├── billy_bottom_nav.dart      # Custom bottom nav with center FAB
+    │       └── billy_header.dart          # App header with logo + settings icon
+    ├── config/
+    │   ├── supabase_config.dart           # Supabase URL + anon key (from --dart-define)
+    │   └── gemini_config.dart             # Gemini model name (API runs in Edge Function)
+    ├── core/
+    │   ├── theme/billy_theme.dart         # Color palette, text styles, ThemeData
+    │   ├── logging/billy_logger.dart      # Debug logger
+    │   ├── formatting/app_currency.dart   # Currency formatting helpers
+    │   └── utils/                         # Shared utilities
+    ├── providers/                         # Shared Riverpod providers (cross-feature)
+    │   ├── transactions_provider.dart
+    │   ├── documents_provider.dart
+    │   ├── budgets_provider.dart
+    │   ├── recurring_provider.dart
+    │   ├── lend_borrow_provider.dart
+    │   ├── profile_provider.dart
+    │   ├── groups_provider.dart
+    │   ├── social_provider.dart
+    │   └── ...more
+    ├── services/                          # Shared services (Supabase calls, business logic)
+    │   ├── supabase_service.dart          # Large data layer for Postgrest/Storage/RPC
+    │   ├── transaction_service.dart       # Transaction CRUD + dashboard aggregation
+    │   ├── allocation_service.dart        # Compute group shares, lend buckets from line items
+    │   └── activity_logger.dart           # Log activity_events to Supabase
+    └── features/                          # Feature-first modules
+        ├── auth/
+        ├── dashboard/
+        ├── activity/
+        ├── analytics/
+        ├── scanner/
+        ├── documents/
+        ├── transactions/
+        ├── lend_borrow/
+        ├── groups/
+        ├── settlements/
+        ├── planning/
+        ├── disputes/
+        ├── export/
+        ├── profile/
+        ├── settings/
+        └── suggestions/
+
+
+    FEATURE FOLDER CONVENTION
+    --------------------------
+
+    Each feature follows this structure:
+
+    lib/features/<feature>/
+    ├── screens/          # Full-page widgets (one per route)
+    │   └── <feature>_screen.dart
+    ├── widgets/          # Reusable UI components for this feature
+    │   └── <widget_name>.dart
+    ├── models/           # Data classes / DTOs (optional)
+    │   └── <model_name>.dart
+    ├── services/         # Feature-specific business logic (optional)
+    │   └── <service_name>.dart
+    ├── providers/        # Feature-specific Riverpod providers (optional)
+    │   └── <provider_name>.dart
+    └── utils/            # Feature-specific helpers (optional)
+        └── <util_name>.dart
+
+
+    STATE MANAGEMENT: RIVERPOD
+    ---------------------------
+
+    - The app uses flutter_riverpod with ProviderScope at root
+    - Widgets extend ConsumerWidget or ConsumerStatefulWidget
+    - Providers are AsyncNotifierProvider for async data (Supabase fetches)
+    - Use ref.watch(provider) in build() for reactive UI
+    - Use ref.read(provider.notifier).method() for actions
+
+    Provider Pattern Example:
+
+        class TransactionsNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
+          @override
+          Future<List<Map<String, dynamic>>> build() async {
+            return TransactionService.fetchTransactions();
+          }
+
+          Future<void> refresh() async {
+            state = const AsyncValue.loading();
+            state = await AsyncValue.guard(() => TransactionService.fetchTransactions());
+          }
+        }
+
+        final transactionsProvider =
+            AsyncNotifierProvider<TransactionsNotifier, List<Map<String, dynamic>>>(
+          TransactionsNotifier.new,
+        );
+
+    Using Providers in Widgets:
+
+        class MyScreen extends ConsumerWidget {
+          @override
+          Widget build(BuildContext context, WidgetRef ref) {
+            final dataAsync = ref.watch(transactionsProvider);
+            return dataAsync.when(
+              data: (items) => ListView(...),
+              loading: () => CircularProgressIndicator(),
+              error: (e, st) => Text('Error: $e'),
+            );
+          }
+        }
+
+
+    NAVIGATION
+    -----------
+
+    - No go_router — the app uses Navigator 1.0 with MaterialPageRoute
+    - Tab switching is managed by LayoutShell with an _activeTab int
+    - Push routes use Navigator.of(context).push(MaterialPageRoute(...))
+    - The bottom nav has 5 positions: Home (0), Activity (1), People (2), Plan (3), Insights (4)
+    - The center FAB opens the scan screen
+    - Settings is pushed from the header icon, not a tab
+
+    Navigation Pattern:
+
+        // Push a new screen
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const SomeScreen()),
+        );
+
+        // Pop back
+        Navigator.of(context).maybePop();
+
+
+    TAB STRUCTURE (CURRENT)
+    ------------------------
+
+    Index | Label     | Screen              | Icon
+    ------|-----------|---------------------|------------------------------
+    0     | Home      | DashboardScreen     | Icons.home_rounded
+    1     | Activity  | ActivityScreen      | Icons.timeline_rounded
+    2     | People    | SplitScreen         | Icons.people_rounded
+    3     | Plan      | PlanScreen          | Icons.calendar_month_rounded
+    4     | Insights  | AnalyticsScreen     | Icons.insights_rounded
+    FAB   | (Scan)    | ScanScreen          | Icons.camera_alt_rounded
+
+
+    SUPABASE ACCESS PATTERN
+    ------------------------
+
+    - All database calls go through static service methods (e.g., TransactionService.fetchTransactions())
+    - Services use Supabase.instance.client directly
+    - User ID: Supabase.instance.client.auth.currentUser?.id
+    - Data is returned as List<Map<String, dynamic>> (no typed models for most tables)
+    - RLS ensures users only see their own data
+
+        class SomeService {
+          static SupabaseClient get _client => Supabase.instance.client;
+          static String? get _uid => _client.auth.currentUser?.id;
+
+          static Future<List<Map<String, dynamic>>> fetchItems() async {
+            final uid = _uid;
+            if (uid == null) return [];
+            final res = await _client
+                .from('some_table')
+                .select()
+                .eq('user_id', uid)
+                .order('created_at', ascending: false);
+            return List<Map<String, dynamic>>.from(res);
+          }
+        }
+
+
+    DEPENDENCIES (pubspec.yaml)
+    ----------------------------
+
+    Package              | Purpose
+    ---------------------|----------------------------------------
+    flutter_riverpod     | State management
+    supabase_flutter     | Backend (auth, database, storage)
+    sentry_flutter       | Error tracking (optional)
+    google_sign_in       | Google OAuth
+    sign_in_with_apple   | Apple OAuth
+    image_picker         | Camera/gallery
+    file_picker          | File selection
+    fl_chart             | Charts (dashboard)
+    intl                 | Date/number formatting
+    pdf / printing       | PDF export
+    csv                  | CSV export
+    share_plus           | Share files
+    pdfrx                | PDF viewing
+    flutter_dropzone     | Web file drop zone
+    cached_network_image | Image caching
+
+
+    KEY CONVENTIONS
+    ----------------
+
+    1. Colors: Always use BillyTheme.<color> — never raw hex
+    2. Spacing: Standard padding is 20px horizontal, 8-16px between sections
+    3. Cards: White background, 24px border radius, no elevation (theme default)
+    4. Bottom sheets: showModalBottomSheet with 24px top radius, white background
+    5. Loading states: Use AsyncValue.when() for data/loading/error
+    6. Currency: Read profile['preferred_currency'] and pass as currencyCode
+    7. Dates: Use intl package's DateFormat for display formatting
+
+
+    ================================================================================
+    PART 2 — CURRENT SCREENS & NAVIGATION MAP
+    ================================================================================
+
+    APP SHELL
+    ----------
+
+    BillyApp (lib/app/app.dart)
+    - Root ConsumerWidget wrapping MaterialApp
+    - Watches authStateProvider — shows LoginScreen when logged out, LayoutShell when authenticated
+    - Listens for auth state changes to auto-redirect on logout
+
+    LayoutShell (lib/app/layout_shell.dart)
+    - Main scaffold with BillyHeader + tab content + BillyBottomNav
+    - Manages _activeTab state (0-4)
+    - Provides callbacks to child screens: onOpenScan, onExportData, onCreateBill, onOpenAllDocuments, onOpenDocumentDetail
+    - FAB opens scan flow, "Add expense" bottom sheet offers scan or manual entry
+
+    BillyHeader (lib/app/widgets/billy_header.dart)
+    - Logo + settings gear icon
+    - Settings icon pushes SettingsScreen
+
+    BillyBottomNav (lib/app/widgets/billy_bottom_nav.dart)
+    - 5-position nav: Home, Activity, [FAB/People], Plan, Insights
+    - Center FAB (emerald circle) triggers scan
+    - "People" label sits below FAB as a tap target for tab index 2
+
+
+    TAB SCREENS
+    ------------
+
+    Tab 0: Dashboard (lib/features/dashboard/screens/dashboard_screen.dart)
+    Status: Active, fully built
+    What it does:
+    - Shows spend summary (SpendHero widget) with this week vs last week
+    - Quick actions (scan, manual entry, export, view all docs)
+    - OCR usage pill
+    - Budget status cards (if budgets exist)
+    - Upcoming recurring bills card (if recurring items exist)
+    - Money flow chart + insights card (category breakdown)
+    - Recent activity list (last 5 documents)
+    Key widgets: SpendHero, QuickActions, OcrUsageCard, BudgetStatusCard, UpcomingBillsCard, MoneyFlowChart, InsightsCard, RecentActivity
+    Data sources: documentsProvider, lendBorrowProvider, profileProvider, budgetsProvider, recurringSeriesProvider, usageLimitsProvider
+
+    Tab 1: Activity (lib/features/activity/screens/activity_screen.dart)
+    Status: Active, needs enhancement
+    What it does: Chronological feed of activity events
+
+    Tab 2: People / Split (lib/features/lend_borrow/screens/split_screen.dart)
+    Status: Active
+    What it does: Friends tab with groups, lend/borrow entries, connections
+
+    Tab 3: Plan (lib/features/planning/screens/plan_screen.dart)
+    Status: Active, needs more features
+    What it does: Budget overview + recurring bills
+    Key widgets: BudgetCreateSheet, RecurringCreateSheet
+
+    Tab 4: Insights / Analytics (lib/features/analytics/screens/analytics_screen.dart)
+    Status: Active
+    What it does: AI-powered analytics with trend charts, patterns, category insights
+    Key widgets: TrendChart, PatternsList, AiInsightsCard, AiInsightsPanel
+
+
+    PUSH SCREENS (from tabs or other screens)
+    ------------------------------------------
+
+    Scanner Flow:
+      ScanScreen — lib/features/scanner/screens/scan_screen.dart — Pushed from: FAB, Quick Actions
+      Sub-widgets: ScanIdle, ScanProcessing, ScanError, ScanReviewPanel, ScanAdjustPreview
+
+    Document Screens:
+      DocumentsHistoryScreen — lib/features/documents/screens/documents_history_screen.dart — Pushed from: Dashboard "View all", Quick Actions
+      DocumentDetailScreen — lib/features/documents/screens/document_detail_screen.dart — Pushed from: History list, Recent Activity items
+      DocumentEditScreen — lib/features/documents/screens/document_edit_screen.dart — Pushed from: Document detail
+      DocumentAiReviewScreen — lib/features/analytics/screens/document_ai_review_screen.dart — Pushed from: Document detail
+
+    Transaction Screens:
+      TransactionDetailScreen — lib/features/transactions/screens/transaction_detail_screen.dart — Pushed from: Dashboard recent items
+
+    Group & Social Screens:
+      GroupExpensesScreen — lib/features/groups/screens/group_expenses_screen.dart — Pushed from: People tab, scan review
+      SettlementConfirmScreen — lib/features/settlements/screens/settlement_confirm_screen.dart — Pushed from: Group expenses
+      DisputeScreen — lib/features/disputes/screens/dispute_screen.dart — Pushed from: Group expenses
+
+    Export Screens:
+      ExportScreen — lib/features/export/screens/export_screen.dart — Pushed from: Dashboard, Settings
+      ExportHistoryScreen — lib/features/export/screens/export_history_screen.dart — Pushed from: Settings
+
+    Other Screens:
+      LoginScreen — lib/features/auth/screens/login_screen.dart — Auth gate
+      SettingsScreen — lib/features/settings/screens/settings_screen.dart — Pushed from: Header icon
+      ProfileScreen — lib/features/profile/screens/profile_screen.dart — Pushed from: Settings
+      SuggestionsScreen — lib/features/suggestions/screens/suggestions_screen.dart — Pushed from: Various
+
+
+    BOTTOM SHEETS
+    --------------
+
+      AddExpenseSheet — lib/features/dashboard/widgets/add_expense_sheet.dart — Triggered by: "Manual entry" option
+      BudgetCreateSheet — lib/features/planning/widgets/budget_create_sheet.dart — Triggered by: Plan tab
+      RecurringCreateSheet — lib/features/planning/widgets/recurring_create_sheet.dart — Triggered by: Plan tab
+      Add options sheet — Inline in LayoutShell — Triggered by: FAB or "Add expense" action
+
+
+    SCREEN STATUS & WHAT NEEDS WORK
+    ---------------------------------
+
+    Screen                    | Status    | Needs
+    --------------------------|-----------|------
+    DashboardScreen           | Working   | Migrate to read from transactions instead of documents
+    ActivityScreen            | Basic     | Needs full activity feed with filters, event types, pagination
+    SplitScreen               | Working   | Rename to PeopleScreen, add cross-group net balance summary
+    PlanScreen                | Basic     | Needs budget detail, recurring detail, monthly calendar view
+    AnalyticsScreen           | Working   | Consider merging insights into Activity or Dashboard
+    ScanScreen + Review       | Working   | Add Money Intent step + Result Preview
+    DocumentsHistoryScreen    | Working   | Will evolve into TransactionHistoryScreen
+    TransactionDetailScreen   | Exists    | Needs source card, allocations section, edit history
+    GroupExpensesScreen        | Working   | Add settlement confirmation badges, dispute button, group activity feed
+    SettingsScreen            | Working   | Move to push route (already done), add more preference options
+    StatementImportScreen     | NOT BUILT | Upload + parse CSV/PDF statements
+    StatementReviewScreen     | NOT BUILT | Review parsed rows, confirm/skip, create transactions
+    BudgetDetailScreen        | NOT BUILT | Single budget: progress, history, category breakdown
+    RecurringDetailScreen     | NOT BUILT | Single recurring series: history, upcoming, edit
+
+
+    ================================================================================
+    PART 3 — DATABASE SCHEMA (FRONTEND-RELEVANT TABLES)
+    ================================================================================
+
+    All tables have RLS enabled and are user-scoped.
+    The frontend accesses them via Supabase.instance.client.from('table_name').
+
+
+    CORE LEDGER
+    ------------
+
+    transactions — The canonical financial event table
+    Every money movement in the system is a transaction. Primary table for spend data, history, aggregation.
+
+      Column               | Type           | Notes
+      ---------------------|----------------|------
+      id                   | uuid           | PK
+      user_id              | uuid           | FK → profiles
+      amount               | numeric(12,2)  | Full amount (e.g., $100 dinner total)
+      currency             | text           | Default 'INR'
+      date                 | date           | Transaction date
+      type                 | text           | expense, income, transfer, lend, borrow, settlement_out, settlement_in, refund, recurring
+      title                | text           | Display name (vendor or description)
+      description          | text           | Optional detail
+      category_id          | uuid           | FK → categories
+      category_source      | text           | manual, ai, rule, import, legacy
+      payment_method       | text           | Optional
+      source_type          | text           | scan, manual, statement, group_split, settlement, recurring, linked_account, system
+      source_document_id   | uuid           | FK → documents (if from scan)
+      source_import_id     | uuid           | FK → statement_imports (if from import)
+      effective_amount     | numeric(12,2)  | User's actual share (e.g., $25 of $100 shared dinner)
+      group_id             | uuid           | FK → expense_groups
+      group_expense_id     | uuid           | FK → group_expenses
+      lend_borrow_id       | uuid           | FK → lend_borrow_entries
+      settlement_id        | uuid           | FK → group_settlements
+      status               | text           | draft, confirmed, pending, voided, disputed
+      is_recurring         | boolean        | Default false
+      recurring_series_id  | uuid           | FK → recurring_series
+      account_id           | uuid           | FK → accounts
+      counter_account_id   | uuid           | FK → accounts (for transfers)
+      notes                | text           | User notes
+      tags                 | text[]         | Flexible tag array
+      extracted_data       | jsonb          | OCR/import metadata
+      created_at           | timestamptz    |
+      updated_at           | timestamptz    |
+
+    Key queries for frontend:
+    - Dashboard spend: SUM(effective_amount) WHERE type='expense' AND status='confirmed'
+    - Recent activity: ORDER BY date DESC LIMIT 10
+    - Filter by type, group, category, date range
+
+
+    SOURCE / EVIDENCE
+    ------------------
+
+    documents — Scanned receipts and manual entries (source evidence)
+
+      Column          | Type        | Notes
+      ----------------|-------------|------
+      id              | uuid        | PK
+      user_id         | uuid        | FK → profiles
+      vendor_name     | text        |
+      amount          | numeric     | Receipt total
+      currency        | text        |
+      date            | text        | ISO date string
+      description     | text        | Category/description
+      category_id     | uuid        | FK → categories
+      category_source | text        |
+      status          | text        | draft, saved, deleted
+      extracted_data  | jsonb       | OCR extraction payload
+      created_at      | timestamptz |
+      updated_at      | timestamptz |
+
+    invoices — OCR-extracted invoice headers
+
+      Column         | Type    | Notes
+      ---------------|---------|------
+      id             | uuid    | PK
+      user_id        | uuid    |
+      vendor_name    | text    |
+      invoice_number | text    |
+      total_amount   | numeric |
+      tax_amount     | numeric |
+      status         | text    | uploading, processing, ready, failed
+      storage_path   | text    | Supabase Storage path
+
+    invoice_items — Line items from OCR
+
+      Column      | Type    | Notes
+      ------------|---------|------
+      id          | uuid    | PK
+      invoice_id  | uuid    | FK → invoices
+      description | text    |
+      quantity    | numeric |
+      unit_price  | numeric |
+      total       | numeric |
+      included    | boolean | Whether user included this item
+
+
+    SOCIAL / GROUPS
+    ----------------
+
+    expense_groups — Shared expense groups
+
+      Column     | Type        | Notes
+      -----------|-------------|------
+      id         | uuid        | PK
+      name       | text        | Group display name
+      created_by | uuid        | FK → profiles
+      created_at | timestamptz |
+
+    expense_group_members
+
+      Column       | Type | Notes
+      -------------|------|------
+      id           | uuid | PK
+      group_id     | uuid | FK → expense_groups
+      user_id      | uuid | FK → profiles
+      display_name | text |
+      role         | text | admin, member
+
+    group_expenses — Shared expenses in groups
+
+      Column          | Type    | Notes
+      ----------------|---------|------
+      id              | uuid    | PK
+      group_id        | uuid    | FK → expense_groups
+      paid_by_user_id | uuid    | Who paid
+      title           | text    |
+      amount          | numeric | Total
+      expense_date    | date    |
+      document_id     | uuid    | FK → documents
+      transaction_id  | uuid    | FK → transactions
+
+    group_expense_participants — Per-user shares
+
+      Column       | Type    | Notes
+      -------------|---------|------
+      id           | uuid    | PK
+      expense_id   | uuid    | FK → group_expenses
+      user_id      | uuid    | FK → profiles
+      share_amount | numeric | This person's share
+
+    group_settlements — Payment settlements
+
+      Column         | Type        | Notes
+      ---------------|-------------|------
+      id             | uuid        | PK
+      group_id       | uuid        | FK → expense_groups
+      paid_by        | uuid        | FK → profiles
+      paid_to        | uuid        | FK → profiles
+      amount         | numeric     |
+      status         | text        | pending, confirmed, rejected
+      confirmed_at   | timestamptz |
+      transaction_id | uuid        | FK → transactions
+
+    lend_borrow_entries — IOUs between users
+
+      Column              | Type    | Notes
+      --------------------|---------|------
+      id                  | uuid    | PK
+      user_id             | uuid    | Owner
+      counterparty_name   | text    |
+      counterparty_user_id| uuid    | FK → profiles (if connected)
+      amount              | numeric |
+      type                | text    | lent or borrowed
+      settled             | boolean |
+      document_id         | uuid    | FK → documents
+      transaction_id      | uuid    | FK → transactions
+
+    user_connections — Confirmed friendships
+
+      Column     | Type        | Notes
+      -----------|-------------|------
+      id         | uuid        | PK
+      user_a     | uuid        | FK → profiles
+      user_b     | uuid        | FK → profiles
+      created_at | timestamptz |
+
+    contact_invitations — Pending friend invitations
+
+      Column       | Type | Notes
+      -------------|------|------
+      id           | uuid | PK
+      from_user_id | uuid |
+      to_email     | text |
+      status       | text | pending, accepted, declined
+
+
+    ACTIVITY & TRUST
+    -----------------
+
+    activity_events — Chronological audit trail
+
+      Column         | Type        | Notes
+      ---------------|-------------|------
+      id             | uuid        | PK
+      user_id        | uuid        | Event owner
+      event_type     | text        | See list below
+      actor_user_id  | uuid        | Who performed the action
+      target_user_id | uuid        | Who was affected
+      group_id       | uuid        | FK → expense_groups
+      transaction_id | uuid        | FK → transactions
+      entity_type    | text        | transaction, group_expense, settlement, etc.
+      entity_id      | uuid        | Generic FK
+      summary        | text        | Human-readable description
+      details        | jsonb       | Structured metadata
+      previous_state | jsonb       | Pre-edit snapshot (for history)
+      visibility     | text        | private, group, public
+      created_at     | timestamptz |
+
+    Event types: transaction_created, transaction_updated, transaction_voided, transaction_disputed, group_expense_created, group_expense_updated, group_expense_deleted, settlement_created, settlement_confirmed, settlement_rejected, lend_created, borrow_created, lend_settled, borrow_settled, group_member_added, group_member_removed, budget_created, budget_exceeded, recurring_detected, recurring_due, dispute_opened, dispute_resolved, document_scanned, statement_imported
+
+    disputes — Contest shared charges
+
+      Column           | Type    | Notes
+      -----------------|---------|------
+      id               | uuid    | PK
+      user_id          | uuid    | Who opened the dispute
+      entity_type      | text    | group_expense, settlement, lend_borrow
+      entity_id        | uuid    |
+      group_id         | uuid    |
+      transaction_id   | uuid    |
+      reason           | text    |
+      proposed_amount  | numeric |
+      status           | text    | open, acknowledged, resolved, withdrawn
+      resolved_by      | uuid    |
+      resolution_notes | text    |
+
+
+    PLANNING
+    ---------
+
+    budgets — Spending limits by category or total
+
+      Column           | Type          | Notes
+      -----------------|---------------|------
+      id               | uuid          | PK
+      user_id          | uuid          |
+      name             | text          |
+      category_id      | uuid          | FK → categories (null = total budget)
+      amount           | numeric(12,2) | Budget limit
+      period           | text          | weekly, monthly, yearly
+      currency         | text          | Default 'INR'
+      rollover_enabled | boolean       |
+      is_active        | boolean       |
+      start_date       | date          |
+      end_date         | date          | null = ongoing
+
+    budget_periods — Track actuals per budget per period
+
+      Column          | Type          | Notes
+      ----------------|---------------|------
+      id              | uuid          | PK
+      budget_id       | uuid          | FK → budgets
+      user_id         | uuid          |
+      period_start    | date          |
+      period_end      | date          |
+      spent           | numeric(12,2) |
+      rollover_amount | numeric(12,2) |
+
+    recurring_series — Known recurring charges
+
+      Column             | Type          | Notes
+      -------------------|---------------|------
+      id                 | uuid          | PK
+      user_id            | uuid          |
+      title              | text          | e.g., "Netflix"
+      amount             | numeric(12,2) |
+      currency           | text          |
+      category_id        | uuid          |
+      cadence            | text          | daily, weekly, biweekly, monthly, quarterly, yearly
+      anchor_date        | date          | First occurrence
+      next_due           | date          |
+      detection_source   | text          | manual, pattern, statement
+      is_active          | boolean       |
+      auto_confirm       | boolean       |
+      remind_days_before | integer       | Default 1
+
+    recurring_occurrences — Individual instances
+
+      Column         | Type          | Notes
+      ---------------|---------------|------
+      id             | uuid          | PK
+      series_id      | uuid          | FK → recurring_series
+      user_id        | uuid          |
+      due_date       | date          |
+      actual_amount  | numeric(12,2) |
+      transaction_id | uuid          | FK → transactions
+      status         | text          | upcoming, confirmed, missed, skipped
+
+    statement_imports — Bank statement uploads
+
+      Column         | Type    | Notes
+      ---------------|---------|------
+      id             | uuid    | PK
+      user_id        | uuid    |
+      file_path      | text    | Storage path
+      file_name      | text    |
+      status         | text    | uploaded, processing, review, completed, failed
+      row_count      | integer |
+      imported_count | integer |
+
+    statement_import_rows — Individual parsed rows
+
+      Column                 | Type          | Notes
+      -----------------------|---------------|------
+      id                     | uuid          | PK
+      import_id              | uuid          | FK → statement_imports
+      row_index              | integer       |
+      parsed_date            | date          |
+      cleaned_description    | text          |
+      parsed_amount          | numeric(12,2) |
+      debit_or_credit        | text          | debit, credit
+      review_status          | text          | pending, accepted, ignored, duplicate, needs_review
+      created_transaction_id | uuid          | FK → transactions
+
+
+    USER & CONFIG
+    --------------
+
+    profiles
+
+      Column             | Type | Notes
+      -------------------|------|------
+      id                 | uuid | PK, matches auth.users
+      display_name       | text |
+      email              | text |
+      preferred_currency | text | Default 'INR'
+      avatar_url         | text |
+
+    categories — Expense categories
+
+      Column     | Type    | Notes
+      -----------|---------|------
+      id         | uuid    | PK
+      user_id    | uuid    | null = global
+      name       | text    |
+      icon       | text    |
+      color      | text    | Hex color
+      is_default | boolean |
+
+    user_usage_limits — OCR/refresh quotas
+
+      Column                  | Type    | Notes
+      ------------------------|---------|------
+      user_id                 | uuid    | PK
+      ocr_scans_used          | integer |
+      ocr_scans_limit         | integer |
+      insight_refreshes_used  | integer |
+      insight_refreshes_limit | integer |
+
+    accounts — Financial accounts (future: net worth)
+
+      Column          | Type          | Notes
+      ----------------|---------------|------
+      id              | uuid          | PK
+      user_id         | uuid          |
+      name            | text          |
+      type            | text          | checking, savings, credit_card, cash, investment, loan, other
+      institution     | text          |
+      current_balance | numeric(14,2) |
+      is_asset        | boolean       | false for credit cards, loans
+      is_active       | boolean       |
+
+    ai_suggestions — AI-powered suggestions inbox
+
+      Column           | Type          | Notes
+      -----------------|---------------|------
+      id               | uuid          | PK
+      user_id          | uuid          |
+      suggestion_type  | text          | category, merchant_normalize, recurring_detect, duplicate_warning, etc.
+      title            | text          |
+      description      | text          |
+      confidence       | numeric(3,2)  | 0-1
+      suggested_action | jsonb         |
+      status           | text          | pending, accepted, dismissed, snoozed, expired
+
+
+    ================================================================================
+    PART 4 — UI PATTERNS & THEME REFERENCE
+    ================================================================================
+
+    COLOR PALETTE
+    --------------
+
+    All colors are defined in lib/core/theme/billy_theme.dart.
+    NEVER hardcode hex values — always reference BillyTheme.<name>.
+
+    Primary (Emerald):
+      emerald700  #047857  Darkest primary (headers, emphasis)
+      emerald600  #059669  MAIN PRIMARY — buttons, FAB, active nav, links
+      emerald500  #10B981  Slightly lighter primary
+      emerald400  #34D399  Light primary (progress bars, badges)
+      emerald100  #D1FAE5  Very light tint (success backgrounds)
+      emerald50   #ECFDF5  Lightest tint (icon backgrounds, subtle cards)
+
+    Neutrals (Gray):
+      gray800  #1F2937  PRIMARY TEXT
+      gray700  #374151  Secondary headings
+      gray600  #4B5563  Body text (darker)
+      gray500  #6B7280  SECONDARY TEXT, labels
+      gray400  #9CA3AF  Inactive icons, placeholder text
+      gray300  #D1D5DB  Borders, dividers, handle bars
+      gray200  #E5E7EB  Light borders
+      gray100  #F3F4F6  Card borders, light backgrounds
+      gray50   #F9FAFB  Very light backgrounds
+
+    Accents:
+      red400    #F87171  Light error/warning
+      red500    #EF4444  ERROR state
+      blue400   #60A5FA  Info, manual entry icon
+      yellow400 #FACC15  Warning
+      green400  #4ADE80  Success (different from emerald)
+
+    Special:
+      scaffoldBg  #F4F7F6  PAGE BACKGROUND (slightly green-tinted gray)
+
+
+    TYPOGRAPHY
+    -----------
+
+    Defined in BillyTheme.lightTheme.textTheme:
+
+      Style          | Size | Weight | Color   | Usage
+      ---------------|------|--------|---------|------
+      headlineLarge  | 32   | w800   | gray800 | Hero numbers (spend amount)
+      headlineMedium | 24   | w700   | gray800 | Section titles
+      titleLarge     | 20   | w700   | gray800 | Screen titles, card headers
+      titleMedium    | 16   | w600   | gray800 | Subsection titles
+      bodyLarge      | 16   | w500   | gray800 | Primary body text
+      bodyMedium     | 14   | w500   | gray500 | Secondary body text
+      labelLarge     | 12   | w600   | gray500 | Labels, captions
+
+    All use letterSpacing: -0.02 for headline/title styles.
+
+    Common Inline Styles:
+
+        // Section header
+        TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)
+
+        // Card title
+        TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BillyTheme.gray800)
+
+        // Subtitle / description
+        TextStyle(fontSize: 13, color: BillyTheme.gray500)
+
+        // Small label
+        TextStyle(fontSize: 12, color: BillyTheme.gray500)
+
+        // Bottom sheet title
+        TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: BillyTheme.gray800)
+
+
+    COMPONENT PATTERNS
+    -------------------
+
+    Cards:
+
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(...),
+        )
+
+    Theme default card: white, 24px radius, no elevation.
+
+    Icon Badges (e.g., in option tiles):
+
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: BillyTheme.emerald50,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(Icons.some_icon, size: 24, color: BillyTheme.emerald600),
+        )
+
+    List Option Tiles (used in bottom sheets):
+
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: BillyTheme.gray100),
+              ),
+              child: Row(
+                children: [
+                  _iconBadge,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+                        const SizedBox(height: 2),
+                        Text(subtitle, style: TextStyle(fontSize: 12, color: BillyTheme.gray500)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: BillyTheme.gray300),
+                ],
+              ),
+            ),
+          ),
+        )
+
+    Bottom Sheets:
+
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.white,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          builder: (ctx) => Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: BillyTheme.gray300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('Sheet Title', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: BillyTheme.gray800)),
+                const SizedBox(height: 4),
+                Text('Description', style: TextStyle(fontSize: 13, color: BillyTheme.gray500)),
+                const SizedBox(height: 20),
+                // Content...
+              ],
+            ),
+          ),
+        );
+
+    Primary Button:
+
+        ElevatedButton(
+          onPressed: () {},
+          child: Text('Confirm'),
+        )
+        // Theme: emerald600 bg, white text, 16px radius, 24h/14v padding
+
+    Section Header with Action:
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Recent', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+            TextButton(
+              onPressed: onViewAll,
+              child: const Text('View all'),
+            ),
+          ],
+        )
+
+    Loading State:
+
+        LinearProgressIndicator(
+          minHeight: 3,
+          color: BillyTheme.emerald600,
+          backgroundColor: BillyTheme.gray100,
+        )
+
+    Scrollable Screen Layout:
+
+        SingleChildScrollView(
+          key: const ValueKey('screen_name'),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),  // 120 bottom for nav clearance
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Sections with SizedBox(height: 16-24) spacing
+            ],
+          ),
+        )
+
+    AppBar for Push Screens:
+
+        AppBar(
+          title: const Text('Screen Title'),
+          backgroundColor: BillyTheme.scaffoldBg,
+          foregroundColor: BillyTheme.gray800,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        )
+
+
+    LAYOUT GUIDELINES
+    ------------------
+
+    - Screen padding: EdgeInsets.fromLTRB(20, 8, 20, 120) — 120 bottom clears the nav bar
+    - Card padding: EdgeInsets.all(20) for content cards
+    - Between cards: SizedBox(height: 16) or SizedBox(height: 12) for tighter spacing
+    - Between sections: SizedBox(height: 24)
+    - Card border radius: 24px for major cards, 14px for list items / option tiles
+    - Icon sizes: 22px in nav bar, 24px in badges/buttons, 18-20px inline
+
+
+    FAB & BOTTOM NAV
+    ------------------
+
+    The bottom nav uses a custom implementation (not BottomNavigationBar):
+    - White background with gray100 top border
+    - 5 items with a center gap for the floating scan FAB
+    - FAB: 52x52 emerald circle, positioned 24px above the nav bar
+    - Active items use emerald600, inactive use gray400
+    - Icon size 22px, label size 10px
+
+
+    COMMON WIDGET COMPOSITION PATTERN
+    -----------------------------------
+
+    Most screens follow this structure:
+
+        class SomeScreen extends ConsumerWidget {
+          const SomeScreen({super.key});
+
+          @override
+          Widget build(BuildContext context, WidgetRef ref) {
+            final dataAsync = ref.watch(someProvider);
+            final profile = ref.watch(profileProvider).valueOrNull;
+            final currency = profile?['preferred_currency'] as String?;
+
+            return dataAsync.when(
+              data: (items) => SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header section
+                    // Content cards
+                    // List items
+                  ],
+                ),
+              ),
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: BillyTheme.emerald600),
+              ),
+              error: (e, st) => Center(
+                child: Text('Something went wrong', style: TextStyle(color: BillyTheme.gray500)),
+              ),
+            );
+          }
+        }
+
+
+    ================================================================================
+    PART 5 — FRONTEND ROADMAP (WHAT TO BUILD NEXT)
+    ================================================================================
+
+    PRIORITY 1: CORE TRANSACTION EXPERIENCE
+    -----------------------------------------
+
+    1.1 Transaction Detail Screen Enhancement
+    Location: lib/features/transactions/screens/transaction_detail_screen.dart
+    Status: Exists but basic
+    Needs:
+    - Source card (link to document/scan image if source_document_id exists)
+    - Allocation section (show effective_amount vs total, group split details if group transaction)
+    - Edit history section (fetch activity_events WHERE entity_type='transaction' AND entity_id=this.id)
+    - Void button (soft delete via status='voided')
+    - Link to related group expense, lend/borrow entry if applicable
+
+    1.2 Transaction History Screen
+    Location: Should replace/enhance lib/features/documents/screens/documents_history_screen.dart
+    Needs:
+    - Read from transactions table instead of documents
+    - Filter chips: All | Expenses | Income | Lend | Borrow | Settlements
+    - Date range filter
+    - Category filter
+    - Search by title/description
+    - Pagination (load more on scroll)
+    - Each item shows: icon (from type), title, effective_amount, date, type badge
+
+    1.3 Dashboard Transition to Transactions
+    Location: lib/features/dashboard/screens/dashboard_screen.dart
+    Needs:
+    - Recent activity should show transactions (not documents)
+    - Spend calculations should use transactions.effective_amount WHERE type='expense' AND status='confirmed'
+    - Keep existing budget and recurring sections (they already work)
+
+
+    PRIORITY 2: ACTIVITY FEED
+    ---------------------------
+
+    2.1 Activity Screen Enhancement
+    Location: lib/features/activity/screens/activity_screen.dart
+    Needs:
+    - Fetch from activity_events table, paginated, ordered by created_at DESC
+    - Filter chips: All | Personal | Groups | Lend/Borrow | Settlements | Budget Alerts
+    - Each event item shows:
+      - Icon based on event_type (see icon map below)
+      - Summary text
+      - Timestamp (relative: "2h ago", "Yesterday", etc.)
+      - Group badge if group_id present
+      - Amount if transaction-related
+      - Tap to navigate to related entity
+    - AI insights card at top (reuse existing AiInsightsPanel from analytics)
+
+    Event type → Icon mapping:
+      transaction_created   → Icons.add_circle_outline
+      transaction_updated   → Icons.edit_outlined
+      transaction_voided    → Icons.cancel_outlined
+      group_expense_created → Icons.group_add_rounded
+      settlement_created    → Icons.payment_rounded
+      settlement_confirmed  → Icons.check_circle_outline
+      settlement_rejected   → Icons.cancel_rounded
+      dispute_opened        → Icons.warning_amber_rounded
+      dispute_resolved      → Icons.handshake_rounded
+      budget_exceeded       → Icons.trending_up_rounded
+      recurring_due         → Icons.event_rounded
+
+    2.2 Activity Feed Provider
+    Location: lib/providers/activity_feed_provider.dart
+    Needs:
+    - AsyncNotifier with pagination support
+    - Filter by event type, group, date range
+    - Fetch from activity_events ordered by created_at DESC
+    - Support cursor-based pagination (fetch next page from last seen created_at)
+
+
+    PRIORITY 3: PLANNING FEATURES
+    -------------------------------
+
+    3.1 Budget Detail Screen (NEW)
+    Location: lib/features/planning/screens/budget_detail_screen.dart
+    What it shows:
+    - Budget name, amount, period, category
+    - Circular progress indicator (spent / budget amount)
+    - Spending breakdown (if category budget: list transactions matching that category this period)
+    - Historical periods (last 3-6 months, bar chart or list showing spent per period)
+    - Edit / Delete actions
+
+    3.2 Recurring Detail Screen (NEW)
+    Location: lib/features/planning/screens/recurring_detail_screen.dart
+    What it shows:
+    - Series info: title, amount, cadence, next due date
+    - Occurrence history (list of past occurrences with status: confirmed/missed/skipped)
+    - Upcoming occurrences (next 3-6)
+    - Link to matched transaction for confirmed occurrences
+    - Edit / Pause / Delete actions
+
+    3.3 Plan Screen Enhancement
+    Location: lib/features/planning/screens/plan_screen.dart
+    Needs:
+    - Budget section: list of active budgets with progress bars, tap → BudgetDetailScreen
+    - Recurring section: list of active recurring series, tap → RecurringDetailScreen
+    - Monthly calendar view (future) showing upcoming bills on dates
+    - Empty states with CTAs to create first budget / recurring item
+
+
+    PRIORITY 4: STATEMENT IMPORT (NEW SCREENS)
+    --------------------------------------------
+
+    4.1 Statement Import Screen
+    Location: lib/features/statements/screens/statement_import_screen.dart
+    Flow:
+    1. File picker (CSV, PDF)
+    2. Upload to Supabase Storage
+    3. Create statement_imports row
+    4. Parse file (CSV client-side, PDF via Edge Function)
+    5. Show parsed row count, navigate to review
+
+    4.2 Statement Review Screen
+    Location: lib/features/statements/screens/statement_review_screen.dart
+    Flow:
+    1. List parsed rows from statement_import_rows
+    2. Each row shows: date, description, amount, debit/credit, suggested category
+    3. Actions per row: Accept (creates transaction), Skip, Mark as duplicate
+    4. Bulk actions: Accept all, Skip all duplicates
+    5. Summary at top: X accepted, Y skipped, Z remaining
+    6. Finish button → update statement_imports.status = 'completed'
+
+
+    PRIORITY 5: SOCIAL & TRUST ENHANCEMENTS
+    -----------------------------------------
+
+    5.1 Settlement Confirmation Flow
+    Location: lib/features/settlements/screens/settlement_confirm_screen.dart
+    Enhancement:
+    - Show settlement details: who paid, how much, which group
+    - Confirm button → update group_settlements.status = 'confirmed', create transaction
+    - Reject button → update status, show reason text field, log activity event
+    - Pending settlements should show yellow badge in People tab
+    - Confirmed settlements show green check
+
+    5.2 Group Activity Feed
+    Location: Inside lib/features/groups/screens/group_expenses_screen.dart
+    Add:
+    - Activity section showing activity_events filtered by group_id
+    - Settlement confirmation badges on settlement items
+    - Dispute button on each group expense
+    - Net balance summary card at top
+
+    5.3 Dispute Flow
+    Location: lib/features/disputes/screens/dispute_screen.dart
+    Flow:
+    1. Open dispute on group expense / settlement / lend-borrow
+    2. Enter reason + optional proposed amount
+    3. Submit → create disputes row + activity event
+    4. View dispute status, resolution notes
+    5. Resolve → update status, log activity event
+
+    5.4 People Screen Enhancement
+    Location: lib/features/lend_borrow/screens/split_screen.dart
+    Needs:
+    - Rename to PeopleScreen
+    - Add cross-group net balance summary card ("You owe Alice ₹500 total", "Bob owes you ₹200 total")
+    - Show pending settlements awaiting your confirmation
+    - Better separation of Groups vs Lend/Borrow sections
+
+
+    PRIORITY 6: POLISH & NAVIGATION
+    ---------------------------------
+
+    6.1 Enhanced Manual Entry
+    Location: lib/features/dashboard/widgets/add_expense_sheet.dart
+    Needs:
+    - Create transactions row directly (not just documents)
+    - Add optional group assignment
+    - Add optional lend/borrow toggle
+    - Category picker
+
+    6.2 Scan Review Enhancement
+    Location: lib/features/scanner/widgets/scan_review_panel.dart
+    Needs (from Product Blueprint Section 6):
+    - Money Intent step: Personal | Shared | Lend | Borrow | Mixed Bill
+    - Result Preview: summary card showing all transactions that will be created
+    - Progressive disclosure: default is personal (one tap save), group/lend are toggles
+
+    6.3 Export Enhancement
+    Location: lib/features/export/
+    Needs:
+    - Read from transactions instead of documents
+    - Filter by transaction type, group, category
+    - Export file shows effective_amount (user's share, not receipt total)
+
+
+    EXISTING PROVIDERS REFERENCE
+    ------------------------------
+
+    Provider                         | File                                            | What it manages
+    ---------------------------------|-------------------------------------------------|----------------
+    transactionsProvider             | lib/providers/transactions_provider.dart         | Transaction CRUD
+    documentsProvider                | lib/providers/documents_provider.dart            | Document/source CRUD
+    budgetsProvider                  | lib/providers/budgets_provider.dart              | Budget CRUD
+    recurringSeriesProvider          | lib/providers/recurring_provider.dart            | Recurring series CRUD
+    lendBorrowProvider               | lib/providers/lend_borrow_provider.dart          | IOUs
+    profileProvider                  | lib/providers/profile_provider.dart              | User profile
+    expenseGroupsNotifierProvider    | lib/providers/groups_provider.dart               | Groups + members
+    groupExpensesProvider            | lib/providers/group_expenses_provider.dart       | Per-group expenses
+    groupSettlementsProvider         | lib/providers/group_settlements_provider.dart    | Per-group settlements
+    connectionsNotifierProvider      | lib/providers/social_provider.dart               | User connections
+    invitationsNotifierProvider      | lib/providers/social_provider.dart               | Contact invitations
+    usageLimitsProvider              | lib/providers/usage_limits_provider.dart         | OCR quotas
+    activityFeedProvider             | lib/providers/activity_feed_provider.dart        | Activity events
+    dashboardSummaryProvider         | lib/providers/dashboard_summary_provider.dart    | Dashboard aggregates
+
+
+    EXISTING SERVICES REFERENCE
+    -----------------------------
+
+    Service                  | File                                                          | What it does
+    -------------------------|---------------------------------------------------------------|-------------
+    TransactionService       | lib/services/transaction_service.dart                         | Transaction CRUD, dashboard aggregation
+    SupabaseService          | lib/services/supabase_service.dart                            | Large data layer for all Postgrest/Storage
+    AllocationService        | lib/services/allocation_service.dart                          | Compute group shares, lend buckets
+    ActivityLogger           | lib/services/activity_logger.dart                             | Log activity_events to Supabase
+    InvoiceOcrPipeline       | lib/features/invoices/services/invoice_ocr_pipeline.dart      | OCR pipeline
+    AnalyticsInsightsService | lib/features/analytics/services/analytics_insights_service.dart| AI insights
+    PdfGenerator             | lib/features/export/services/pdf_generator.dart               | Export PDF
+    CsvGenerator             | lib/features/export/services/csv_generator.dart               | Export CSV
+
+
+    ================================================================================
+    END OF FRONTEND HANDOFF
+    ================================================================================

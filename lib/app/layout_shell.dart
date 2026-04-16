@@ -14,6 +14,7 @@ import '../features/analytics/screens/analytics_screen.dart';
 import '../features/lend_borrow/screens/split_screen.dart';
 import '../features/planning/screens/plan_screen.dart';
 import '../features/scanner/screens/scan_screen.dart';
+import '../features/goat/goat_mode_placeholder_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/statements/screens/statement_review_screen.dart';
 import '../providers/documents_provider.dart';
@@ -262,6 +263,12 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
     );
   }
 
+  void _openGoatMode() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const GoatModePlaceholderScreen()),
+    );
+  }
+
   void _switchToTab(int index) {
     setState(() => _activeTab = index);
   }
@@ -302,7 +309,7 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
       body: SafeArea(
         child: Column(
           children: [
-            BillyHeader(onOpenSettings: _openSettings),
+            BillyHeader(onOpenSettings: _openSettings, onOpenGoatMode: _openGoatMode),
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
