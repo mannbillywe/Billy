@@ -7,10 +7,42 @@ import 'package:intl/intl.dart';
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../../providers/budgets_provider.dart';
+import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/recurring_provider.dart';
 import '../widgets/budget_create_sheet.dart';
 import '../widgets/recurring_create_sheet.dart';
+
+/// Computes month-to-date spend maps from documents for budget matching.
+({Map<String, double> byName, Map<String, double> byCatId}) _computeMonthSpend(List<Map<String, dynamic>> docs) {
+  final now = DateTime.now();
+  final monthStart = DateTime(now.year, now.month, 1);
+  final byName = <String, double>{};
+  final byCatId = <String, double>{};
+  for (final d in docs) {
+    final dt = DateTime.tryParse(d['date']?.toString() ?? '');
+    if (dt == null || dt.isBefore(monthStart)) continue;
+    if ((d['status'] as String?) == 'draft') continue;
+    final desc = (d['description'] as String?)?.split(',').first.trim() ?? 'Other';
+    final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+    byName[desc] = (byName[desc] ?? 0) + amt;
+    final catId = d['category_id'] as String?;
+    if (catId != null) {
+      byCatId[catId] = (byCatId[catId] ?? 0) + amt;
+    }
+  }
+  return (byName: byName, byCatId: byCatId);
+}
+
+/// Match a budget to its spent amount from document-derived spend maps.
+double _matchBudgetSpent(Map<String, dynamic> b, Map<String, double> byName, Map<String, double> byCatId) {
+  final budgetCatId = b['category_id'] as String?;
+  if (budgetCatId != null && byCatId.containsKey(budgetCatId)) {
+    return byCatId[budgetCatId]!;
+  }
+  final catName = (b['categories'] as Map?)?['name'] as String? ?? b['name'] as String? ?? '';
+  return byName[catName] ?? 0;
+}
 
 const _amber500 = Color(0xFFF59E0B);
 const _blue500 = Color(0xFF3B82F6);
@@ -59,6 +91,12 @@ IconData _categoryIcon(String? name) {
     case 'personal':
     case 'personal care':
       return Icons.spa_rounded;
+    case 'borrow':
+    case 'borrowed':
+      return Icons.call_received_rounded;
+    case 'lend':
+    case 'lending':
+      return Icons.call_made_rounded;
     default:
       return Icons.category_rounded;
   }
@@ -98,6 +136,12 @@ Color _categoryColor(String? name) {
     case 'creative':
     case 'design':
       return _blue500;
+    case 'borrow':
+    case 'borrowed':
+      return const Color(0xFFEF4444);
+    case 'lend':
+    case 'lending':
+      return const Color(0xFF06B6D4);
     default:
       return BillyTheme.emerald600;
   }
@@ -138,11 +182,14 @@ class PlanScreen extends ConsumerWidget {
     final recurringAsync = ref.watch(recurringSeriesProvider);
     final profile = ref.watch(profileProvider).valueOrNull;
     final currency = profile?['preferred_currency'] as String?;
+    final allDocs = ref.watch(documentsProvider).valueOrNull ?? [];
+    final spend = _computeMonthSpend(allDocs);
 
     return RefreshIndicator(
       onRefresh: () async {
         await ref.read(budgetsProvider.notifier).refresh();
         await ref.read(recurringSeriesProvider.notifier).refresh();
+        ref.invalidate(documentsProvider);
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
@@ -160,7 +207,7 @@ class PlanScreen extends ConsumerWidget {
           // ─── Spending Ring ───────────────────────────────────
           budgetsAsync.when(
             data: (budgets) =>
-                _SpendingRingSummary(budgets: budgets, currency: currency),
+                _SpendingRingSummary(budgets: budgets, currency: currency, spendByName: spend.byName, spendByCatId: spend.byCatId),
             loading: () => const SizedBox(
                 height: 260,
                 child: Center(
@@ -196,7 +243,7 @@ class PlanScreen extends ConsumerWidget {
                 : Column(
                     children: budgets
                         .map((b) =>
-                            _V5BudgetCard(budget: b, currency: currency, ref: ref))
+                            _V5BudgetCard(budget: b, currency: currency, ref: ref, spendByName: spend.byName, spendByCatId: spend.byCatId))
                         .toList(),
                   ),
             loading: () => const _ShimmerLoader(),
@@ -334,9 +381,11 @@ class PlanScreen extends ConsumerWidget {
 // ─── Spending Ring Summary ─────────────────────────────────────────
 
 class _SpendingRingSummary extends StatelessWidget {
-  const _SpendingRingSummary({required this.budgets, required this.currency});
+  const _SpendingRingSummary({required this.budgets, required this.currency, required this.spendByName, required this.spendByCatId});
   final List<Map<String, dynamic>> budgets;
   final String? currency;
+  final Map<String, double> spendByName;
+  final Map<String, double> spendByCatId;
 
   @override
   Widget build(BuildContext context) {
@@ -344,7 +393,7 @@ class _SpendingRingSummary extends StatelessWidget {
     double totalSpent = 0;
     for (final b in budgets) {
       totalBudget += (b['amount'] as num?)?.toDouble() ?? 0;
-      totalSpent += (b['spent'] as num?)?.toDouble() ?? 0;
+      totalSpent += _matchBudgetSpent(b, spendByName, spendByCatId);
     }
 
     final pct = totalBudget > 0 ? (totalSpent / totalBudget).clamp(0.0, 1.5) : 0.0;
@@ -497,16 +546,18 @@ class _V5SectionHeader extends StatelessWidget {
 
 class _V5BudgetCard extends StatelessWidget {
   const _V5BudgetCard(
-      {required this.budget, required this.currency, required this.ref});
+      {required this.budget, required this.currency, required this.ref, required this.spendByName, required this.spendByCatId});
   final Map<String, dynamic> budget;
   final String? currency;
   final WidgetRef ref;
+  final Map<String, double> spendByName;
+  final Map<String, double> spendByCatId;
 
   @override
   Widget build(BuildContext context) {
     final name = budget['name'] as String? ?? 'Budget';
     final amount = (budget['amount'] as num?)?.toDouble() ?? 0;
-    final spent = (budget['spent'] as num?)?.toDouble() ?? 0;
+    final spent = _matchBudgetSpent(budget, spendByName, spendByCatId);
     final cat = budget['categories'] as Map<String, dynamic>?;
     final catName = cat?['name'] as String?;
     final period = budget['period'] as String? ?? 'monthly';

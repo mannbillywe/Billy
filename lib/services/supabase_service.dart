@@ -176,6 +176,18 @@ class SupabaseService {
     }
   }
 
+  /// All categories visible to the current user (defaults + user-created).
+  static Future<List<Map<String, dynamic>>> fetchCategories() async {
+    final uid = _uid;
+    if (uid == null) return [];
+    final res = await _client
+        .from('categories')
+        .select('id,name,icon,color,is_default,user_id')
+        .or('user_id.is.null,user_id.eq.$uid')
+        .order('name');
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   /// Match `categories.name` for default (`user_id` null) or current user rows.
   static Future<String?> resolveCategoryIdByName(String name) async {
     final uid = _uid;
