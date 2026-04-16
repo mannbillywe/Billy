@@ -141,6 +141,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final changePct = prevTotal > 0 ? ((totalExpenses - prevTotal) / prevTotal * 100).round() : null;
 
     final now = DateTime.now();
+    final avgDaily = docCount > 0 && totalExpenses > 0
+        ? totalExpenses / rangeDays
+        : 0.0;
 
     // Build chart bars + labels based on selected range
     final barData = <double>[];
@@ -204,9 +207,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       final avgWeekly = totalExpenses > 0 ? totalExpenses / weeksBack : 0.0;
       chartAvgLabel = 'avg ${AppCurrency.formatCompact(avgWeekly, currency)}/wk';
     }
-    final avgDaily = docCount > 0 && totalExpenses > 0
-        ? totalExpenses / rangeDays
-        : 0.0;
 
     // Projected period-end: scale avg to the natural period length
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
