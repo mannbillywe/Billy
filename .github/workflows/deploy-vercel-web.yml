@@ -1,11 +1,13 @@
 # Deploy compiled Flutter web to Vercel (fixes "blank" sites that only serve source web/).
 #
+# Intended production domain for Billy web: https://web-iota-lilac-34.vercel.app
+# Set VERCEL_PROJECT_ID to the Vercel *project* that owns that domain (Project → Settings → General).
+#
 # Required GitHub repo secrets (Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN        — https://vercel.com/account/tokens
 #   VERCEL_ORG_ID       — Same as Team ID on Team → Settings → General (starts with team_).
 #                         Only the team page shows this; it is NOT the Project ID.
-#   VERCEL_PROJECT_ID   — Per deployment target: open the PROJECT (dashboard tile) → Settings → General → Project ID (prj_...).
-#                         Repeat for each site (web-iota vs billycon) if you use different projects.
+#   VERCEL_PROJECT_ID   — Project ID (prj_...) for web-iota-lilac-34 (or another target if you change domain).
 #
 # Optional (override embedded Supabase in lib/config/supabase_config.dart):
 #   SUPABASE_URL
@@ -21,6 +23,8 @@ on:
       - 'web/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      - 'scripts/**'
+      - 'README.md'
       - '.github/workflows/deploy-vercel-web.yml'
   workflow_dispatch:
 

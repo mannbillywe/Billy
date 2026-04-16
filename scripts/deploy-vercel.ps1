@@ -17,6 +17,12 @@ if (-not $env:VERCEL_TOKEN) {
             if ($line -match '^\s*VERCEL_SCOPE=(.+)$') {
                 $env:VERCEL_SCOPE = $Matches[1].Trim().Trim('"')
             }
+            if ($line -match '^\s*VERCEL_ORG_ID=(.+)$') {
+                $env:VERCEL_ORG_ID = $Matches[1].Trim().Trim('"')
+            }
+            if ($line -match '^\s*VERCEL_PROJECT_ID=(.+)$') {
+                $env:VERCEL_PROJECT_ID = $Matches[1].Trim().Trim('"')
+            }
         }
     }
 }
@@ -80,7 +86,8 @@ if (-not (Test-Path $buildWeb)) {
 
 Write-Host "Deploying to Vercel..." -ForegroundColor Cyan
 if ($env:VERCEL_PROJECT_ID) {
-    Write-Host "Using VERCEL_ORG_ID / VERCEL_PROJECT_ID (deploys to that project, e.g. web-iota-lilac-34)." -ForegroundColor Gray
+    Write-Host "Using VERCEL_ORG_ID / VERCEL_PROJECT_ID (targets the Vercel project for that ID; production URL is on the project Domains tab)." -ForegroundColor Gray
+    Write-Host "Primary Billy web URL for this repo: https://web-iota-lilac-34.vercel.app — use the matching Project ID." -ForegroundColor DarkGray
 }
 Set-Location $buildWeb
 $scope = if ($env:VERCEL_SCOPE) { $env:VERCEL_SCOPE } else { "mannbillywes-projects" }
@@ -92,3 +99,4 @@ if ($env:VERCEL_TOKEN) {
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Deployment complete!" -ForegroundColor Green
+Write-Host "Open the production domain from your Vercel project (e.g. https://web-iota-lilac-34.vercel.app)." -ForegroundColor DarkGray

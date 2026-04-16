@@ -4,10 +4,17 @@ Flutter app (Android, iOS, Web) for managing invoices, receipts, and expenses wi
 
 ## Deploy to Vercel (Web)
 
-**Production URLs**
+**Primary production URL (this repo)**
 
-- CLI-linked project: [https://billycon.vercel.app](https://billycon.vercel.app)
-- Older Git-connected project (often broken if misconfigured): [https://web-iota-lilac-34.vercel.app](https://web-iota-lilac-34.vercel.app)
+- **[https://web-iota-lilac-34.vercel.app](https://web-iota-lilac-34.vercel.app)** — use this domain for Billy web. Each push to `main` that touches `lib/`, `web/`, or `pubspec` runs [Deploy web to Vercel](.github/workflows/deploy-vercel-web.yml) **only if** GitHub Actions secrets point at this Vercel project.
+
+**GitHub Actions → deploy here**
+
+1. Open Vercel → project whose production domain is **web-iota-lilac-34.vercel.app** → **Settings → General** and copy **Project ID** (`prj_…`).
+2. In GitHub: **mannbillywe/Billy** → **Settings → Secrets and variables → Actions**, set **`VERCEL_PROJECT_ID`** to that value. Also set **`VERCEL_ORG_ID`** (team id `team_…`) and **`VERCEL_TOKEN`** ([create token](https://vercel.com/account/tokens)).
+3. Confirm **Actions** tab shows a green **Deploy web to Vercel** run after your push, or run the workflow manually (**Actions → Deploy web to Vercel → Run workflow**).
+
+If `VERCEL_PROJECT_ID` is for a different project (for example **billycon**), production will update that other URL instead: [https://billycon.vercel.app](https://billycon.vercel.app).
 
 **Why `web-iota-lilac-34` can look “blank” (only title *billy*)**
 
