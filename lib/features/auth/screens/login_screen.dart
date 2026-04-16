@@ -80,21 +80,34 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() { _isLoading = true; _message = null; });
 
     try {
-      await Supabase.instance.client.auth.signUp(
+      final response = await Supabase.instance.client.auth.signUp(
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
+        emailRedirectTo: kIsWeb ? Uri.base.origin : null,
         data: {
           'full_name': _fullNameCtrl.text.trim(),
           if (_phoneCtrl.text.trim().isNotEmpty) 'phone': _phoneCtrl.text.trim(),
         },
       );
-      _showMsg('Account created! Check your email to verify your account.');
+      if (!mounted) return;
+      if (response.session != null) {
+        // Signed in — [BillyApp] switches to [LayoutShell] via [authStateProvider].
+        setState(() {
+          _isLoading = false;
+          _message = null;
+          _messageIsError = false;
+        });
+      } else if (response.user != null) {
+        _showMsg('Account created! Check your email to verify, then sign in.');
+      } else {
+        _showMsg('Account could not be created.', error: true);
+      }
     } on AuthException catch (e) {
       _showMsg(e.message, error: true);
     } catch (_) {
       _showMsg('Something went wrong. Please try again.', error: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && _isLoading) setState(() => _isLoading = false);
     }
   }
 
