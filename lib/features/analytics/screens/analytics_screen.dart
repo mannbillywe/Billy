@@ -140,12 +140,69 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     }
     final changePct = prevTotal > 0 ? ((totalExpenses - prevTotal) / prevTotal * 100).round() : null;
 
-    // Daily spend data for bar chart
-    final barData = <double>[];
     final now = DateTime.now();
-    for (int i = 6; i >= 0; i--) {
-      final dayStr = now.subtract(Duration(days: i)).toIso8601String().substring(0, 10);
-      barData.add(dailyMap[dayStr] ?? 0);
+
+    // Build chart bars + labels based on selected range
+    final barData = <double>[];
+    final barLabels = <String>[];
+    final int barHighlightIndex;
+    final String chartTitle;
+    final String chartAvgLabel;
+
+    if (_range == '1W') {
+      // 7 daily bars
+      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      for (int i = 6; i >= 0; i--) {
+        final day = now.subtract(Duration(days: i));
+        final dayStr = day.toIso8601String().substring(0, 10);
+        barData.add(dailyMap[dayStr] ?? 0);
+        barLabels.add(days[(day.weekday - 1) % 7]);
+      }
+      barHighlightIndex = 6;
+      chartTitle = 'Daily spend';
+      chartAvgLabel = 'avg ${AppCurrency.formatCompact(avgDaily, currency)}/day';
+    } else if (_range == '3M') {
+      // 3 monthly bars
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      for (int i = 2; i >= 0; i--) {
+        final m = DateTime(now.year, now.month - i, 1);
+        final mEnd = DateTime(m.year, m.month + 1, 0);
+        var sum = 0.0;
+        for (final entry in dailyMap.entries) {
+          final dt = DateTime.tryParse(entry.key);
+          if (dt != null && !dt.isBefore(m) && !dt.isAfter(mEnd)) {
+            sum += entry.value;
+          }
+        }
+        barData.add(sum);
+        barLabels.add(months[m.month - 1]);
+      }
+      barHighlightIndex = 2;
+      chartTitle = 'Monthly spend';
+      final avgMonthly = totalExpenses / 3;
+      chartAvgLabel = 'avg ${AppCurrency.formatCompact(avgMonthly, currency)}/mo';
+    } else {
+      // 1M: ~4-5 weekly bars
+      final weeksBack = (rangeDays / 7).ceil().clamp(3, 6);
+      for (int i = weeksBack - 1; i >= 0; i--) {
+        final weekEnd = now.subtract(Duration(days: i * 7));
+        final weekStart = weekEnd.subtract(const Duration(days: 6));
+        var sum = 0.0;
+        for (final entry in dailyMap.entries) {
+          final dt = DateTime.tryParse(entry.key);
+          if (dt != null &&
+              !dt.isBefore(DateTime(weekStart.year, weekStart.month, weekStart.day)) &&
+              !dt.isAfter(DateTime(weekEnd.year, weekEnd.month, weekEnd.day))) {
+            sum += entry.value;
+          }
+        }
+        barData.add(sum);
+        barLabels.add('${DateFormat('d/M').format(weekStart)}');
+      }
+      barHighlightIndex = barData.length - 1;
+      chartTitle = 'Weekly spend';
+      final avgWeekly = totalExpenses > 0 ? totalExpenses / weeksBack : 0.0;
+      chartAvgLabel = 'avg ${AppCurrency.formatCompact(avgWeekly, currency)}/wk';
     }
     final avgDaily = docCount > 0 && totalExpenses > 0
         ? totalExpenses / rangeDays
@@ -329,8 +386,15 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               _SavingsSuggestionsCard(tips: savingsTips, currency: currency),
             if (savingsTips.isNotEmpty) const SizedBox(height: 12),
 
-            // ── Daily spend trend ──
-            _DailyTrendCard(data: barData, avgDaily: avgDaily, totalSpent: totalExpenses, currency: currency),
+            // ── Spend trend chart (adapts to 1W/1M/3M) ──
+            _SpendTrendCard(
+              data: barData,
+              labels: barLabels,
+              highlightIndex: barHighlightIndex,
+              title: chartTitle,
+              avgLabel: chartAvgLabel,
+              currency: currency,
+            ),
             const SizedBox(height: 12),
 
             // ── Category breakdown with full donut ──
@@ -616,18 +680,26 @@ class _StatPill extends StatelessWidget {
   }
 }
 
-class _DailyTrendCard extends StatelessWidget {
-  const _DailyTrendCard({required this.data, required this.avgDaily, required this.totalSpent, this.currency});
+class _SpendTrendCard extends StatelessWidget {
+  const _SpendTrendCard({
+    required this.data,
+    required this.labels,
+    required this.highlightIndex,
+    required this.title,
+    required this.avgLabel,
+    this.currency,
+  });
   final List<double> data;
-  final double avgDaily, totalSpent;
+  final List<String> labels;
+  final int highlightIndex;
+  final String title;
+  final String avgLabel;
   final String? currency;
 
   @override
   Widget build(BuildContext context) {
     final maxY = data.isNotEmpty ? data.reduce((a, b) => a > b ? a : b) * 1.3 : 1.0;
-    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final now = DateTime.now();
-    final dayLabels = List.generate(7, (i) => days[(now.subtract(Duration(days: 6 - i)).weekday - 1) % 7]);
+    final barWidth = data.length <= 3 ? 36.0 : (data.length <= 5 ? 24.0 : 18.0);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -638,8 +710,8 @@ class _DailyTrendCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Daily spend', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-              Text('avg ${AppCurrency.formatCompact(avgDaily, currency)}/day', style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
+              Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+              Text(avgLabel, style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
             ],
           ),
           const SizedBox(height: 16),
@@ -660,10 +732,14 @@ class _DailyTrendCard extends StatelessWidget {
                     titlesData: FlTitlesData(
                       bottomTitles: AxisTitles(sideTitles: SideTitles(
                         showTitles: true,
-                        getTitlesWidget: (val, _) => Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(dayLabels[val.toInt() % 7], style: const TextStyle(fontSize: 10, color: BillyTheme.gray500)),
-                        ),
+                        getTitlesWidget: (val, _) {
+                          final idx = val.toInt();
+                          if (idx < 0 || idx >= labels.length) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(labels[idx], style: const TextStyle(fontSize: 10, color: BillyTheme.gray500)),
+                          );
+                        },
                       )),
                       leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -672,12 +748,12 @@ class _DailyTrendCard extends StatelessWidget {
                     gridData: const FlGridData(show: false),
                     borderData: FlBorderData(show: false),
                     barGroups: data.asMap().entries.map((e) {
-                      final isToday = e.key == 6;
+                      final isCurrent = e.key == highlightIndex;
                       return BarChartGroupData(x: e.key, barRods: [
                         BarChartRodData(
                           toY: e.value,
-                          color: isToday ? BillyTheme.emerald600 : BillyTheme.emerald600.withValues(alpha: 0.35),
-                          width: 18,
+                          color: isCurrent ? BillyTheme.emerald600 : BillyTheme.emerald600.withValues(alpha: 0.35),
+                          width: barWidth,
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
                         ),
                       ]);
