@@ -18,7 +18,6 @@ class BillyHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider).valueOrNull;
     final displayName = profile?['display_name'] as String?;
-    final showGoat = profileGoatModeEnabled(profile);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -76,10 +75,8 @@ class BillyHeader extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (showGoat) ...[
-                const SizedBox(width: 6),
-                _GoatModeButton(onTap: onOpenGoatMode, compact: narrow),
-              ],
+              const SizedBox(width: 6),
+              _GoatModeButton(onTap: onOpenGoatMode, compact: narrow),
               const SizedBox(width: 6),
               Material(
                 color: Colors.transparent,

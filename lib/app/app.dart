@@ -18,9 +18,15 @@ class BillyApp extends ConsumerWidget {
     ref.listen<AsyncValue<dynamic>>(authStateProvider, (prev, next) {
       final wasLoggedIn = prev?.valueOrNull != null;
       final isLoggedIn = next.valueOrNull != null;
+
       if (wasLoggedIn && !isLoggedIn) {
         _navKey.currentState?.pushAndRemoveUntil(
           MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+      } else if (!wasLoggedIn && isLoggedIn) {
+        _navKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const LayoutShell()),
           (_) => false,
         );
       }

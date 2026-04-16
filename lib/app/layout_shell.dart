@@ -267,17 +267,6 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
   }
 
   void _openGoatMode() {
-    final profile = ref.read(profileProvider).valueOrNull;
-    if (!profileGoatModeEnabled(profile)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('GOAT Mode is not enabled for your account.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const GoatModePlaceholderScreen()),
     );
