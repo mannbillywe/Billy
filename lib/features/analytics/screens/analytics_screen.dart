@@ -150,13 +150,33 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       barData.add(dailyMap[dayStr] ?? 0);
     }
     final avgDaily = docCount > 0 && totalExpenses > 0
-        ? totalExpenses / (range.end.difference(range.start).inDays.clamp(1, 365))
+        ? totalExpenses / rangeDays
         : 0.0;
 
-    // Projected month-end
+    // Projected period-end: scale avg to the natural period length
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
     final dayOfMonth = now.day;
-    final projected = avgDaily * daysInMonth;
+    // For 1W: project to end of that 7-day window
+    // For 1M: project to end of calendar month
+    // For 3M: project to end of the 3-month window
+    final int projectionTarget;
+    final String projectionLabel;
+    switch (_range) {
+      case '1W':
+        projectionTarget = 7;
+        projectionLabel = 'Week est.';
+        break;
+      case '3M':
+        projectionTarget = rangeDays;
+        projectionLabel = '3M est.';
+        break;
+      case '1M':
+      default:
+        projectionTarget = daysInMonth;
+        projectionLabel = 'Month est.';
+        break;
+    }
+    final projected = avgDaily * projectionTarget;
 
     // ── Budget vs actual (matches by category_id + name) ──
     double budgetTotal = 0;
@@ -273,6 +293,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               dayOfMonth: dayOfMonth,
               currency: currency,
               rangeLabel: _range,
+              projectionLabel: projectionLabel,
             ),
             const SizedBox(height: 12),
 
@@ -483,6 +504,7 @@ class _SpendHeroCard extends StatelessWidget {
     required this.totalExpenses, required this.docCount, required this.changePct,
     required this.avgDaily, required this.projected, required this.daysInMonth,
     required this.dayOfMonth, this.currency, required this.rangeLabel,
+    required this.projectionLabel,
   });
   final double totalExpenses;
   final int docCount;
@@ -491,6 +513,7 @@ class _SpendHeroCard extends StatelessWidget {
   final int daysInMonth, dayOfMonth;
   final String? currency;
   final String rangeLabel;
+  final String projectionLabel;
 
   String get _rangeTitle {
     switch (rangeLabel) {
@@ -534,7 +557,7 @@ class _SpendHeroCard extends StatelessWidget {
             children: [
               Expanded(child: _HeroStat(label: 'Daily avg', value: AppCurrency.formatCompact(avgDaily, currency))),
               Container(width: 1, height: 28, color: Colors.white24),
-              Expanded(child: _HeroStat(label: 'Projected', value: AppCurrency.formatCompact(projected, currency))),
+              Expanded(child: _HeroStat(label: projectionLabel, value: AppCurrency.formatCompact(projected, currency))),
               Container(width: 1, height: 28, color: Colors.white24),
               Expanded(child: _HeroStat(label: 'Day', value: '$dayOfMonth/$daysInMonth')),
             ],
