@@ -230,6 +230,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       budgetDetails: budgetDetails,
       totalExpenses: totalExpenses,
       currency: currency,
+      rangeDays: rangeDays,
     );
 
     return RefreshIndicator(
@@ -361,9 +362,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     required List<_BudgetLine> budgetDetails,
     required double totalExpenses,
     String? currency,
+    required int rangeDays,
   }) {
     final tips = <_SavingTip>[];
     String fmt(double v) => AppCurrency.formatCompact(v, currency);
+
+    // Normalize range-based amounts to a monthly equivalent so the
+    // "Potential monthly savings" header is always accurate.
+    final monthMultiplier = rangeDays > 0 ? 30.0 / rangeDays : 1.0;
 
     const discretionary = {'Dining', 'Shopping', 'Entertainment', 'Food & Beverage', 'Subscriptions', 'Other'};
 
@@ -382,30 +388,32 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       final overBy = overBudget ? budgetMatch.spent - budgetMatch.limit : 0.0;
 
       if (overBudget) {
-        final cutTarget = overBy * 0.5;
+        // overBy is already monthly (budgets always use calendar month)
         tips.add(_SavingTip(
           category: cat.key,
           type: _SavingTipType.overBudget,
           amount: overBy,
-          description: 'Over budget by ${(overBy / budgetMatch.limit * 100).round()}%. Cut ${fmt(cutTarget)} to get back on track.',
+          description: 'Over budget by ${(overBy / budgetMatch.limit * 100).round()}%. Cut ${fmt(overBy)} to get back on track.',
           severity: 3,
         ));
       } else if (grew && isDiscretionary && growthPct > 15 && current > 100) {
-        final saveable = (current - prev) * 0.5;
+        final rangeGrowth = (current - prev) * 0.5;
+        final monthlySaveable = rangeGrowth * monthMultiplier;
         tips.add(_SavingTip(
           category: cat.key,
           type: _SavingTipType.growingFast,
-          amount: saveable,
-          description: 'Up $growthPct% from last period. Cutting back halfway could save ~${fmt(saveable)}.',
+          amount: monthlySaveable,
+          description: 'Up $growthPct% from last period. Cutting back halfway could save ~${fmt(monthlySaveable)}/mo.',
           severity: 2,
         ));
       } else if (isDiscretionary && pctOfTotal > 25) {
-        final saveable = current * 0.2;
+        final rangeSaveable = current * 0.2;
+        final monthlySaveable = rangeSaveable * monthMultiplier;
         tips.add(_SavingTip(
           category: cat.key,
           type: _SavingTipType.highShare,
-          amount: saveable,
-          description: '${pctOfTotal.round()}% of total spend. A 20% cut would save ~${fmt(saveable)}.',
+          amount: monthlySaveable,
+          description: '${pctOfTotal.round()}% of total spend. A 20% cut would save ~${fmt(monthlySaveable)}/mo.',
           severity: 1,
         ));
       }
