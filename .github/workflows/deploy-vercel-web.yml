@@ -14,6 +14,14 @@
 name: Deploy web to Vercel
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/deploy-vercel-web.yml'
   workflow_dispatch:
 
 jobs:
