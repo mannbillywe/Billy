@@ -19,6 +19,7 @@ import '../features/settings/screens/settings_screen.dart';
 import '../features/statements/screens/statement_review_screen.dart';
 import '../providers/documents_provider.dart';
 import '../providers/groups_provider.dart';
+import '../providers/profile_provider.dart';
 import '../providers/social_provider.dart';
 import 'widgets/billy_bottom_nav.dart';
 import 'widgets/billy_header.dart';
@@ -264,6 +265,17 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
   }
 
   void _openGoatMode() {
+    final profile = ref.read(profileProvider).valueOrNull;
+    if (!profileGoatModeEnabled(profile)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('GOAT Mode is not enabled for your account.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const GoatModePlaceholderScreen()),
     );
