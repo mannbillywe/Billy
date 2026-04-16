@@ -1,8 +1,7 @@
 import 'package:intl/intl.dart';
 
 /// When [documents.date] (vendor invoice date) is before the calendar day of
-/// [created_at], the expense was added recently but dated in the past — show a hint
-/// so users know why “This week” may follow the save date, not the printed bill date.
+/// [created_at], the expense was added recently but dated in the past.
 class DocumentBackdateHint {
   const DocumentBackdateHint({
     required this.shortLabel,
@@ -10,9 +9,7 @@ class DocumentBackdateHint {
     required this.bannerBody,
   });
 
-  /// One line for compact lists (e.g. Recent).
   final String shortLabel;
-
   final String bannerTitle;
   final String bannerBody;
 
@@ -31,7 +28,6 @@ class DocumentBackdateHint {
     return DateFormat('dd MMM yyyy').format(savedDay);
   }
 
-  /// Returns null when no hint should be shown.
   static DocumentBackdateHint? fromDocumentRow(Map<String, dynamic> d, [DateTime? now]) {
     if ((d['status'] as String?) == 'draft') return null;
     final n = now ?? DateTime.now();
@@ -43,11 +39,11 @@ class DocumentBackdateHint {
     final inv = DateFormat('dd MMM yyyy').format(docDay);
     final saved = _savedPhrase(createdDay, n);
     return DocumentBackdateHint(
-      shortLabel: 'Older bill · added $saved',
-      bannerTitle: 'Invoice date is in the past',
+      shortLabel: 'Dated $inv \u00b7 uploaded $saved',
+      bannerTitle: 'Older bill uploaded recently',
       bannerBody:
-          'This record uses the vendor’s bill date ($inv). You saved it $saved. '
-          '“This week” and analytics can count it on the day you added it when the bill date is older.',
+          'This bill is dated $inv but you uploaded it $saved. '
+          '"This week" and analytics can count it by either date.',
     );
   }
 }

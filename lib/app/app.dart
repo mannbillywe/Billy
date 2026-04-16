@@ -6,6 +6,8 @@ import '../features/auth/providers/auth_provider.dart';
 import '../features/auth/screens/login_screen.dart';
 import 'layout_shell.dart';
 
+final _navKey = GlobalKey<NavigatorState>();
+
 class BillyApp extends ConsumerWidget {
   const BillyApp({super.key});
 
@@ -13,7 +15,19 @@ class BillyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authAsync = ref.watch(authStateProvider);
 
+    ref.listen<AsyncValue<dynamic>>(authStateProvider, (prev, next) {
+      final wasLoggedIn = prev?.valueOrNull != null;
+      final isLoggedIn = next.valueOrNull != null;
+      if (wasLoggedIn && !isLoggedIn) {
+        _navKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+      }
+    });
+
     return MaterialApp(
+      navigatorKey: _navKey,
       title: 'Billy',
       debugShowCheckedModeBanner: false,
       theme: BillyTheme.lightTheme,

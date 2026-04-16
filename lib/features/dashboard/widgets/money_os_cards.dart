@@ -29,12 +29,11 @@ class UpcomingBillsCard extends StatelessWidget {
     if (upcoming.isEmpty) return const SizedBox.shrink();
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: BillyTheme.gray50),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6)],
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: BillyTheme.gray100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -45,22 +44,22 @@ class UpcomingBillsCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    width: 28, height: 28,
-                    decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10)),
                     child: const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Upcoming bills', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+                  const SizedBox(width: 10),
+                  const Text('Upcoming Bills', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
                 ],
               ),
               if (onViewAll != null)
                 GestureDetector(
                   onTap: onViewAll,
-                  child: const Text('View all', style: TextStyle(fontSize: 12, color: BillyTheme.emerald600, fontWeight: FontWeight.w500)),
+                  child: const Text('View all', style: TextStyle(fontSize: 13, color: BillyTheme.emerald600, fontWeight: FontWeight.w600)),
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           ...upcoming.map((r) {
             final title = r['title'] as String? ?? 'Bill';
             final amount = (r['amount'] as num?)?.toDouble() ?? 0;
@@ -138,80 +137,150 @@ class BudgetStatusCard extends StatelessWidget {
       return dt != null && !dt.isBefore(monthStart) && (d['status'] as String?) != 'draft';
     }).toList();
 
-    final catSpend = <String, double>{};
+    final catSpendByName = <String, double>{};
+    final catSpendByCatId = <String, double>{};
     for (final d in monthDocs) {
       final desc = (d['description'] as String?)?.split(',').first.trim() ?? 'Other';
-      catSpend[desc] = (catSpend[desc] ?? 0) + ((d['amount'] as num?)?.toDouble() ?? 0);
+      final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+      catSpendByName[desc] = (catSpendByName[desc] ?? 0) + amt;
+      final catId = d['category_id'] as String?;
+      if (catId != null) {
+        catSpendByCatId[catId] = (catSpendByCatId[catId] ?? 0) + amt;
+      }
     }
 
     double totalBudget = 0;
     double totalSpent = 0;
     for (final b in budgets) {
       totalBudget += (b['amount'] as num?)?.toDouble() ?? 0;
-      final catName = (b['categories'] as Map?)?['name'] as String? ?? b['name'] as String? ?? '';
-      totalSpent += catSpend[catName] ?? 0;
+      // Match by category_id first, then by name
+      final budgetCatId = b['category_id'] as String?;
+      double spent = 0;
+      if (budgetCatId != null && catSpendByCatId.containsKey(budgetCatId)) {
+        spent = catSpendByCatId[budgetCatId]!;
+      } else {
+        final catName = (b['categories'] as Map?)?['name'] as String? ?? b['name'] as String? ?? '';
+        spent = catSpendByName[catName] ?? 0;
+      }
+      totalSpent += spent;
     }
 
     final pct = totalBudget > 0 ? (totalSpent / totalBudget).clamp(0.0, 1.5) : 0.0;
     final overBudget = pct > 1.0;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: BillyTheme.gray50),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6)],
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: BillyTheme.gray100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 28, height: 28,
-                    decoration: BoxDecoration(
-                      color: overBudget ? const Color(0xFFFEE2E2) : BillyTheme.emerald50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.account_balance_wallet_rounded, size: 16,
-                      color: overBudget ? BillyTheme.red400 : BillyTheme.emerald600),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text('Budget this month', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-                ],
+              Text(
+                AppCurrency.format(totalSpent, currencyCode),
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: overBudget ? BillyTheme.red400 : BillyTheme.gray800,
+                ),
               ),
-              if (onViewAll != null)
-                GestureDetector(onTap: onViewAll, child: const Text('View all', style: TextStyle(fontSize: 12, color: BillyTheme.emerald600, fontWeight: FontWeight.w500))),
+              Text(
+                ' / ${AppCurrency.format(totalBudget, currencyCode)}',
+                style: const TextStyle(fontSize: 14, color: BillyTheme.gray500),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Text(AppCurrency.format(totalSpent, currencyCode), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: overBudget ? BillyTheme.red400 : BillyTheme.gray800)),
-              Text(' / ${AppCurrency.format(totalBudget, currencyCode)}', style: const TextStyle(fontSize: 14, color: BillyTheme.gray500)),
-            ],
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           ClipRRect(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: pct.clamp(0.0, 1.0),
               backgroundColor: BillyTheme.gray200,
-              valueColor: AlwaysStoppedAnimation<Color>(overBudget ? BillyTheme.red400 : BillyTheme.emerald600),
-              minHeight: 8,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                overBudget ? BillyTheme.red400 : BillyTheme.emerald600,
+              ),
+              minHeight: 6,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             overBudget
                 ? 'Over budget by ${AppCurrency.format(totalSpent - totalBudget, currencyCode)}'
                 : '${AppCurrency.format(totalBudget - totalSpent, currencyCode)} remaining',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: overBudget ? BillyTheme.red400 : BillyTheme.emerald600),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: overBudget ? BillyTheme.red400 : BillyTheme.emerald600,
+            ),
           ),
+          // Per-budget breakdown
+          if (budgets.length > 1) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: BillyTheme.gray100),
+            const SizedBox(height: 14),
+            ...budgets.take(3).map((b) {
+              final budgetAmt = (b['amount'] as num?)?.toDouble() ?? 0;
+              final budgetCatId = b['category_id'] as String?;
+              double spent = 0;
+              if (budgetCatId != null && catSpendByCatId.containsKey(budgetCatId)) {
+                spent = catSpendByCatId[budgetCatId]!;
+              } else {
+                final catName = (b['categories'] as Map?)?['name'] as String? ?? b['name'] as String? ?? '';
+                spent = catSpendByName[catName] ?? 0;
+              }
+              final itemPct = budgetAmt > 0 ? (spent / budgetAmt).clamp(0.0, 1.0) : 0.0;
+              final catName = (b['categories'] as Map?)?['name'] as String? ?? b['name'] as String? ?? 'Budget';
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            catName,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: BillyTheme.gray800,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          '${AppCurrency.format(spent, currencyCode)} / ${AppCurrency.format(budgetAmt, currencyCode)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: BillyTheme.gray500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: itemPct,
+                        backgroundColor: BillyTheme.gray200,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          spent > budgetAmt ? BillyTheme.red400 : BillyTheme.emerald600,
+                        ),
+                        minHeight: 6,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
         ],
       ),
     );

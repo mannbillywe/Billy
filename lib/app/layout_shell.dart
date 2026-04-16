@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,6 +15,7 @@ import '../features/lend_borrow/screens/split_screen.dart';
 import '../features/planning/screens/plan_screen.dart';
 import '../features/scanner/screens/scan_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
+import '../features/statements/screens/statement_review_screen.dart';
 import '../providers/documents_provider.dart';
 import '../providers/groups_provider.dart';
 import '../providers/social_provider.dart';
@@ -88,6 +90,19 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
                 );
               },
             ),
+            const SizedBox(height: 10),
+            _addOptionTile(
+              ctx,
+              icon: Icons.table_chart_rounded,
+              color: const Color(0xFF8B5CF6),
+              bg: const Color(0xFFF3F0FF),
+              title: 'Import CSV statement',
+              subtitle: 'Import transactions from a bank CSV export',
+              onTap: () {
+                Navigator.pop(ctx);
+                _openCsvImport();
+              },
+            ),
           ],
         ),
       ),
@@ -154,6 +169,71 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
     );
   }
 
+  Future<void> _openCsvImport() async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv'],
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return;
+    final file = res.files.first;
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read the CSV file')),
+        );
+      }
+      return;
+    }
+    final csvString = String.fromCharCodes(bytes);
+    final rows = _parseCsvRows(csvString);
+    if (rows.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No transaction rows found in CSV')),
+        );
+      }
+      return;
+    }
+    final bankName = file.name.replaceAll('.csv', '').replaceAll('_', ' ');
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<bool>(
+        builder: (_) => StatementReviewScreen(
+          bankName: bankName,
+          rows: rows,
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _parseCsvRows(String csv) {
+    final lines = csv.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    if (lines.length < 2) return [];
+    final header = lines.first.split(',').map((h) => h.trim().toLowerCase()).toList();
+    final dateIdx = header.indexWhere((h) => h.contains('date'));
+    final descIdx = header.indexWhere((h) => h.contains('desc') || h.contains('narr') || h.contains('vendor') || h.contains('particular'));
+    final amountIdx = header.indexWhere((h) => h.contains('amount') || h.contains('debit'));
+    if (amountIdx == -1) return [];
+
+    final rows = <Map<String, dynamic>>[];
+    for (var i = 1; i < lines.length; i++) {
+      final cols = lines[i].split(',');
+      if (cols.length <= amountIdx) continue;
+      final amtStr = cols[amountIdx].replaceAll(RegExp(r'[^0-9.\-]'), '');
+      final amount = double.tryParse(amtStr);
+      if (amount == null || amount == 0) continue;
+      rows.add({
+        'date': dateIdx >= 0 && cols.length > dateIdx ? cols[dateIdx].trim() : '',
+        'vendor': descIdx >= 0 && cols.length > descIdx ? cols[descIdx].trim() : 'Unknown',
+        'amount': amount,
+        'matched': false,
+      });
+    }
+    return rows;
+  }
+
   void _openDocumentHistory() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const DocumentsHistoryScreen()),
@@ -182,15 +262,19 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
     );
   }
 
+  void _switchToTab(int index) {
+    setState(() => _activeTab = index);
+  }
+
   Widget _buildContent() {
     switch (_activeTab) {
       case 0:
         return DashboardScreen(
-          onOpenScan: _openScan,
           onExportData: _openExport,
           onCreateBill: _openAddExpense,
           onOpenAllDocuments: _openDocumentHistory,
           onOpenDocumentDetail: _openDocumentDetail,
+          onSwitchToPlan: () => _switchToTab(3),
         );
       case 1:
         return const ActivityScreen();
@@ -202,11 +286,11 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
         return const AnalyticsScreen();
       default:
         return DashboardScreen(
-          onOpenScan: _openScan,
           onExportData: _openExport,
           onCreateBill: _openAddExpense,
           onOpenAllDocuments: _openDocumentHistory,
           onOpenDocumentDetail: _openDocumentDetail,
+          onSwitchToPlan: () => _switchToTab(3),
         );
     }
   }

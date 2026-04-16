@@ -38,6 +38,26 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
 
   String? get _uid => Supabase.instance.client.auth.currentUser?.id;
 
+  /// Net balance with a specific friend: positive = they owe you, negative = you owe them
+  double _friendBalance(String? friendId, String? uid) {
+    if (friendId == null || uid == null) return 0;
+    final entries = ref.read(lendBorrowProvider).valueOrNull ?? [];
+    double balance = 0;
+    for (final e in entries) {
+      if ((e['status'] as String?) != 'pending') continue;
+      final cpId = e['counterparty_user_id'] as String?;
+      final creatorId = e['user_id'] as String?;
+      final amount = (e['amount'] as num?)?.toDouble() ?? 0;
+      // Only entries between me and this friend
+      if (creatorId == uid && cpId == friendId) {
+        balance += (e['type'] == 'lent') ? amount : -amount;
+      } else if (creatorId == friendId && cpId == uid) {
+        balance += (e['type'] == 'lent') ? -amount : amount;
+      }
+    }
+    return balance;
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = _uid;
@@ -77,6 +97,10 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildNetBalanceHero(netBalance, collectTotal, payTotal, currency),
+                if (connections.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  _buildRecentFriends(connections, uid, currency),
+                ],
                 const SizedBox(height: 20),
               ],
             ),
@@ -91,6 +115,8 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
               unselectedLabelColor: BillyTheme.gray400,
               indicatorColor: BillyTheme.emerald600,
               indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.label,
+              dividerColor: BillyTheme.gray100,
               labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               tabs: [
@@ -107,7 +133,7 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
         children: [
           _buildIOUTab(pending, uid, currency, connections, groups),
           _buildGroupsTab(groups, connections),
-          _buildContactsTab(connections, invitations, uid),
+          _buildContactsTab(connections, invitations, uid, currency),
         ],
       ),
     );
@@ -115,66 +141,169 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
 
   Widget _buildNetBalanceHero(double net, double collect, double pay, String? currency) {
     final isPositive = net >= 0;
+    final groupCount = ref.read(expenseGroupsNotifierProvider).valueOrNull?.length ?? 0;
+
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: isPositive
-              ? [const Color(0xFFECFDF5), const Color(0xFFD1FAE5)]
-              : [const Color(0xFFFEF2F2), const Color(0xFFFEE2E2)],
+          colors: [Color(0xFF047857), Color(0xFF065F46)],
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isPositive ? BillyTheme.emerald100 : const Color(0xFFFECACA),
-        ),
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isPositive ? 'You are owed' : 'You owe',
+            isPositive ? 'OWED TO YOU' : 'YOU OWE',
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: isPositive ? BillyTheme.emerald700 : BillyTheme.red500,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: Colors.white.withValues(alpha: 0.7),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             AppCurrency.format(net.abs(), currency),
-            style: TextStyle(
-              fontSize: 32,
+            style: const TextStyle(
+              fontSize: 36,
               fontWeight: FontWeight.w800,
-              color: isPositive ? const Color(0xFF064E3B) : const Color(0xFF991B1B),
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _MiniStat(
-                  icon: Icons.arrow_downward_rounded,
-                  iconColor: BillyTheme.emerald600,
-                  label: 'To collect',
-                  amount: AppCurrency.format(collect, currency),
-                  amountColor: BillyTheme.emerald700,
+          if (groupCount > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.trending_up_rounded, size: 16, color: Colors.white.withValues(alpha: 0.7)),
+                const SizedBox(width: 6),
+                Text(
+                  'Across $groupCount active group${groupCount != 1 ? 's' : ''}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
                 ),
-              ),
-              Container(width: 1, height: 36, color: BillyTheme.gray200),
-              Expanded(
-                child: _MiniStat(
-                  icon: Icons.arrow_upward_rounded,
-                  iconColor: BillyTheme.red500,
-                  label: 'To pay',
-                  amount: AppCurrency.format(pay, currency),
-                  amountColor: BillyTheme.red500,
+              ],
+            ),
+          ],
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text('To collect', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.65))),
+                      const SizedBox(height: 4),
+                      Text(AppCurrency.format(collect, currency), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                Container(width: 1, height: 36, color: Colors.white.withValues(alpha: 0.2)),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text('To pay', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.65))),
+                      const SizedBox(height: 4),
+                      Text(AppCurrency.format(pay, currency), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFFFCA5A5))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRecentFriends(List<Map<String, dynamic>> connections, String? uid, String? currency) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Recent Friends',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+            ),
+            GestureDetector(
+              onTap: () => _tabCtrl.animateTo(2),
+              child: const Text(
+                'View All',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: BillyTheme.emerald600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 80,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: connections.length.clamp(0, 6) + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: 16),
+            itemBuilder: (_, i) {
+              if (i == connections.length.clamp(0, 6)) {
+                return GestureDetector(
+                  onTap: () => _tabCtrl.animateTo(2),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: BillyTheme.gray100,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: BillyTheme.gray200, width: 2),
+                        ),
+                        child: const Icon(Icons.add_rounded, size: 24, color: BillyTheme.gray500),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text('Add', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: BillyTheme.gray500)),
+                    ],
+                  ),
+                );
+              }
+              final c = connections[i];
+              final name = c['display_name'] as String? ?? 'User';
+              return Column(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: BillyTheme.emerald100,
+                    child: Text(
+                      name.isNotEmpty ? name[0].toUpperCase() : '?',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BillyTheme.emerald700),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: 56,
+                    child: Text(
+                      name.split(' ').first,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: BillyTheme.gray700),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -326,6 +455,14 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
   // ─── Groups Tab ───────────────────────────────────────────────────────────
 
   Widget _buildGroupsTab(List<Map<String, dynamic>> groups, List<Map<String, dynamic>> connections) {
+    // Build quick lookup from userId to display name
+    final connMap = <String, String>{};
+    for (final c in connections) {
+      final id = c['other_user_id'] as String?;
+      final name = c['display_name'] as String? ?? 'User';
+      if (id != null) connMap[id] = name;
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
       children: [
@@ -338,9 +475,15 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
         else
           ...groups.map((g) {
             final members = (g['expense_group_members'] as List?) ?? [];
+            final memberNames = members.map((m) {
+              final mMap = m is Map ? Map<String, dynamic>.from(m) : <String, dynamic>{};
+              final userId = mMap['user_id'] as String?;
+              return connMap[userId] ?? 'You';
+            }).toList();
             return _GroupCard(
               name: g['name'] as String? ?? 'Group',
               memberCount: members.length,
+              memberNames: memberNames,
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -367,7 +510,7 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
 
   // ─── Contacts Tab ─────────────────────────────────────────────────────────
 
-  Widget _buildContactsTab(List<Map<String, dynamic>> connections, List<Map<String, dynamic>> invitations, String? uid) {
+  Widget _buildContactsTab(List<Map<String, dynamic>> connections, List<Map<String, dynamic>> invitations, String? uid, String? currency) {
     final outgoing = invitations.where((i) => i['from_user_id'] == uid && i['status'] == 'pending').toList();
     final incoming = invitations.where((i) => i['from_user_id'] != uid && i['status'] == 'pending').toList();
 
@@ -468,7 +611,12 @@ class _SplitScreenState extends ConsumerState<SplitScreen> with SingleTickerProv
           const SizedBox(height: 20),
           _SectionLabel(label: 'Your contacts', count: connections.length),
           const SizedBox(height: 8),
-          ...connections.map((c) => _ContactCard(name: c['display_name'] as String)),
+          ...connections.map((c) {
+            final otherId = c['other_user_id'] as String?;
+            final name = c['display_name'] as String;
+            final balance = _friendBalance(otherId, uid);
+            return _ContactCard(name: name, balance: balance, currency: currency);
+          }),
         ],
         if (connections.isEmpty && incoming.isEmpty && outgoing.isEmpty)
           Padding(
@@ -967,28 +1115,6 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(_TabBarDelegate old) => false;
 }
 
-class _MiniStat extends StatelessWidget {
-  const _MiniStat({required this.icon, required this.iconColor, required this.label, required this.amount, required this.amountColor});
-  final IconData icon;
-  final Color iconColor;
-  final String label;
-  final String amount;
-  final Color amountColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, size: 16, color: iconColor),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: BillyTheme.gray500)),
-        const SizedBox(height: 2),
-        Text(amount, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: amountColor)),
-      ],
-    );
-  }
-}
-
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.label, required this.count});
   final String label;
@@ -1141,63 +1267,106 @@ class _IOUCard extends StatelessWidget {
 }
 
 class _GroupCard extends StatelessWidget {
-  const _GroupCard({required this.name, required this.memberCount, required this.onTap, this.onAddMembers});
+  const _GroupCard({required this.name, required this.memberCount, required this.onTap, this.onAddMembers, this.memberNames = const []});
   final String name;
   final int memberCount;
   final VoidCallback onTap;
   final VoidCallback? onAddMembers;
+  final List<String> memberNames;
+
+  static const _groupIcons = <String, IconData>{
+    'apartment': Icons.home_rounded,
+    'living': Icons.home_rounded,
+    'house': Icons.home_rounded,
+    'rent': Icons.home_rounded,
+    'roommate': Icons.home_rounded,
+    'trip': Icons.flight_rounded,
+    'travel': Icons.flight_rounded,
+    'vacation': Icons.flight_rounded,
+    'food': Icons.restaurant_rounded,
+    'dinner': Icons.restaurant_rounded,
+    'lunch': Icons.restaurant_rounded,
+    'office': Icons.business_rounded,
+    'work': Icons.business_rounded,
+  };
+
+  IconData _icon() {
+    final lower = name.toLowerCase();
+    for (final entry in _groupIcons.entries) {
+      if (lower.contains(entry.key)) return entry.value;
+    }
+    return Icons.group_outlined;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final membersText = memberNames.isNotEmpty
+        ? memberNames.take(3).join(', ') + (memberNames.length > 3 ? ' +${memberNames.length - 3} more' : '')
+        : '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: BillyTheme.gray100),
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: BillyTheme.emerald50,
-                    borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: BillyTheme.emerald50,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(_icon(), size: 24, color: BillyTheme.emerald600),
                   ),
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.group_outlined, size: 22, color: BillyTheme.emerald600),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$memberCount ${memberCount == 1 ? 'member' : 'members'}',
-                        style: const TextStyle(fontSize: 12, color: BillyTheme.gray500),
-                      ),
-                    ],
+                  const Spacer(),
+                  if (onAddMembers != null)
+                    IconButton(
+                      icon: const Icon(Icons.person_add_alt_outlined, size: 20, color: BillyTheme.gray400),
+                      onPressed: onAddMembers,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BillyTheme.gray800)),
+              const SizedBox(height: 4),
+              Text(
+                membersText,
+                style: const TextStyle(fontSize: 13, color: BillyTheme.gray500),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: BillyTheme.gray50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$memberCount ${memberCount == 1 ? 'member' : 'members'}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BillyTheme.gray600),
+                    ),
                   ),
-                ),
-                if (onAddMembers != null)
-                  IconButton(
-                    icon: const Icon(Icons.person_add_alt_outlined, size: 20, color: BillyTheme.gray400),
-                    onPressed: onAddMembers,
-                  ),
-                const Icon(Icons.chevron_right_rounded, color: BillyTheme.gray300),
-              ],
-            ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right_rounded, color: BillyTheme.gray300, size: 22),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -1292,11 +1461,15 @@ class _PersonEntry {
 }
 
 class _ContactCard extends StatelessWidget {
-  const _ContactCard({required this.name});
+  const _ContactCard({required this.name, this.balance = 0, this.currency});
   final String name;
+  final double balance;
+  final String? currency;
 
   @override
   Widget build(BuildContext context) {
+    final hasBalance = balance.abs() > 0.01;
+    final owesYou = balance > 0;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1316,7 +1489,30 @@ class _ContactCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
+                if (hasBalance)
+                  Text(
+                    owesYou ? 'owes you' : 'you owe',
+                    style: TextStyle(fontSize: 11, color: owesYou ? BillyTheme.emerald600 : BillyTheme.red500),
+                  )
+                else
+                  const Text('Settled up', style: TextStyle(fontSize: 11, color: BillyTheme.gray400)),
+              ],
+            ),
+          ),
+          if (hasBalance)
+            Text(
+              AppCurrency.format(balance.abs(), currency),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: owesYou ? BillyTheme.emerald600 : BillyTheme.red500,
+              ),
+            ),
         ],
       ),
     );

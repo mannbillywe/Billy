@@ -12,7 +12,6 @@ import '../../../providers/documents_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
 import '../../../providers/profile_provider.dart';
 import '../../../providers/recurring_provider.dart';
-import '../../../providers/usage_limits_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/screens/documents_history_screen.dart';
 import '../widgets/ai_insights_panel.dart';
@@ -109,21 +108,20 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final sortedMerchants = merchantMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
 
     // ── Previous period comparison (per-category) ──
-    final prevDays = range.end.difference(range.start).inDays;
-    final prevStart = range.start.subtract(Duration(days: prevDays));
+    // Use the exact same range length for a fair comparison
+    final rangeDays = range.end.difference(range.start).inDays.clamp(1, 365);
     final prevEnd = range.start.subtract(const Duration(days: 1));
+    final prevStart = prevEnd.subtract(Duration(days: rangeDays - 1));
+    final prevRange = DocumentDateRange(prevStart, prevEnd);
+    final prevFiltered = DocumentDateRange.filterDocumentsForWeekBasis(docs, prevRange, weekBasis);
     double prevTotal = 0;
     final prevCatMap = <String, double>{};
-    for (final d in docs) {
+    for (final d in prevFiltered) {
       if ((d['status'] as String?) == 'draft') continue;
-      final dt = DateTime.tryParse(d['date']?.toString() ?? '');
-      if (dt == null) continue;
-      if (!dt.isBefore(prevStart) && !dt.isAfter(prevEnd)) {
-        final amt = (d['amount'] as num?)?.toDouble() ?? 0;
-        prevTotal += amt;
-        final cat = _categoryBucket(d);
-        prevCatMap[cat] = (prevCatMap[cat] ?? 0) + amt;
-      }
+      final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+      prevTotal += amt;
+      final cat = _categoryBucket(d);
+      prevCatMap[cat] = (prevCatMap[cat] ?? 0) + amt;
     }
     final changePct = prevTotal > 0 ? ((totalExpenses - prevTotal) / prevTotal * 100).round() : null;
 
@@ -188,7 +186,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     // Upcoming recurring
     int upcomingBills = 0;
-    double upcomingAmount = 0;
     for (final r in recurring) {
       final nd = r['next_due'] as String?;
       if (nd == null) continue;
@@ -196,7 +193,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       if (due == null) continue;
       if (due.difference(now).inDays <= 7) {
         upcomingBills++;
-        upcomingAmount += (r['amount'] as num?)?.toDouble() ?? 0;
       }
     }
 
@@ -349,14 +345,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       // Over-budget category
       final budgetMatch = budgetDetails.where((b) => b.name.toLowerCase() == cat.key.toLowerCase()).firstOrNull;
       final overBudget = budgetMatch != null && budgetMatch.spent > budgetMatch.limit && budgetMatch.limit > 0;
-      final overBy = overBudget ? budgetMatch!.spent - budgetMatch.limit : 0.0;
+      final overBy = overBudget ? budgetMatch.spent - budgetMatch.limit : 0.0;
 
       if (overBudget) {
         tips.add(_SavingTip(
           category: cat.key,
           type: _SavingTipType.overBudget,
           amount: overBy,
-          description: 'Over budget by ${(overBy / budgetMatch!.limit * 100).round()}%. Cut ${(overBy * 0.5).ceil()} to get back on track.',
+          description: 'Over budget by ${(overBy / budgetMatch.limit * 100).round()}%. Cut ${(overBy * 0.5).ceil()} to get back on track.',
           severity: 3,
         ));
       } else if (grew && isDiscretionary && growthPct > 15 && current > 100) {

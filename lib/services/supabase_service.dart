@@ -488,39 +488,6 @@ class SupabaseService {
     }
   }
 
-  // ─── Splits ──────────────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> fetchSplits() async {
-    if (_uid == null) return [];
-    final res = await _client
-        .from('splits')
-        .select('*, split_participants(*)')
-        .eq('user_id', _uid!)
-        .order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  static Future<void> insertSplit({
-    required String title,
-    required double totalAmount,
-    required List<Map<String, dynamic>> participants,
-  }) async {
-    if (_uid == null) return;
-    final splitRes = await _client.from('splits').insert({
-      'user_id': _uid,
-      'title': title,
-      'total_amount': totalAmount,
-    }).select().single();
-
-    final splitId = splitRes['id'];
-    for (final p in participants) {
-      await _client.from('split_participants').insert({
-        'split_id': splitId,
-        'name': p['name'],
-        'amount_owed': p['amount_owed'],
-      });
-    }
-  }
-
   // ─── Profile ─────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>?> fetchProfile() async {
@@ -729,17 +696,6 @@ class SupabaseService {
     await _client.from('contact_invitations').update({'status': 'cancelled'}).eq('id', invitationId);
   }
 
-  // ─── Connected Apps ──────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> fetchConnectedApps() async {
-    if (_uid == null) return [];
-    final res = await _client
-        .from('connected_apps')
-        .select()
-        .eq('user_id', _uid!)
-        .order('app_name');
-    return List<Map<String, dynamic>>.from(res);
-  }
-
   // ─── Usage Limits ────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>?> fetchUsageLimits() async {
@@ -793,94 +749,4 @@ class SupabaseService {
     return used < limit;
   }
 
-  // ─── Dashboard aggregations ──────────────────────────────────────
-  static Future<double> todaySpend() async {
-    if (_uid == null) return 0;
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    final res = await _client
-        .from('documents')
-        .select('amount')
-        .eq('user_id', _uid!)
-        .eq('date', today)
-        .neq('status', 'draft');
-    double total = 0;
-    for (final row in res) {
-      total += (row['amount'] as num).toDouble();
-    }
-    return total;
-  }
-
-  static Future<double> weekSpend({required DateTime weekStart, required DateTime weekEnd}) async {
-    if (_uid == null) return 0;
-    final res = await _client
-        .from('documents')
-        .select('amount')
-        .eq('user_id', _uid!)
-        .gte('date', weekStart.toIso8601String().substring(0, 10))
-        .lte('date', weekEnd.toIso8601String().substring(0, 10))
-        .neq('status', 'draft');
-    double total = 0;
-    for (final row in res) {
-      total += (row['amount'] as num).toDouble();
-    }
-    return total;
-  }
-
-  static Future<List<Map<String, dynamic>>> recentDocuments({int limit = 10}) async {
-    if (_uid == null) return [];
-    final res = await _client
-        .from('documents')
-        .select()
-        .eq('user_id', _uid!)
-        .neq('status', 'draft')
-        .order('date', ascending: false)
-        .limit(limit);
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  static Future<Map<String, double>> categoryBreakdown() async {
-    if (_uid == null) return {};
-    final now = DateTime.now();
-    final weekAgo = now.subtract(const Duration(days: 7));
-    final res = await _client
-        .from('documents')
-        .select('amount, description')
-        .eq('user_id', _uid!)
-        .gte('date', weekAgo.toIso8601String().substring(0, 10))
-        .neq('status', 'draft');
-    final map = <String, double>{};
-    for (final row in res) {
-      final cat = (row['description'] as String?) ?? 'Other';
-      map[cat] = (map[cat] ?? 0) + (row['amount'] as num).toDouble();
-    }
-    return map;
-  }
-
-  static Future<List<double>> dailySpendForWeek() async {
-    if (_uid == null) return List.filled(7, 0);
-    final now = DateTime.now();
-    final start = now.subtract(const Duration(days: 6));
-    final startStr = start.toIso8601String().substring(0, 10);
-    final endStr = now.toIso8601String().substring(0, 10);
-    final res = await _client
-        .from('documents')
-        .select('date, amount')
-        .eq('user_id', _uid!)
-        .gte('date', startStr)
-        .lte('date', endStr)
-        .neq('status', 'draft');
-    final byDay = <String, double>{};
-    for (final row in res) {
-      final d = row['date'] as String?;
-      if (d == null) continue;
-      final a = (row['amount'] as num?)?.toDouble() ?? 0;
-      byDay[d] = (byDay[d] ?? 0) + a;
-    }
-    final result = <double>[];
-    for (int i = 6; i >= 0; i--) {
-      final dayStr = now.subtract(Duration(days: i)).toIso8601String().substring(0, 10);
-      result.add(byDay[dayStr] ?? 0);
-    }
-    return result;
-  }
 }

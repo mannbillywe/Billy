@@ -2,7 +2,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/formatting/app_currency.dart';
-import '../../../core/theme/billy_theme.dart';
 
 /// Hero card: **weekSpend** is document-only (receipts & invoices), same basis as [weeklyData].
 class SpendHero extends StatelessWidget {
@@ -24,212 +23,252 @@ class SpendHero extends StatelessWidget {
 
   final double weekSpend;
   final String? currencyCode;
-  /// Explains how this week is bucketed (upload vs bill date).
   final String weekSubtitle;
-  /// Non-draft documents counted in this week’s total (same basis as [weekSpend]).
   final int? documentCountThisWeek;
   final List<double> weeklyData;
-  /// Mon–Sun pending IOUs created that day (collect / lent side), viewer perspective.
   final List<double> lendCollectWeek;
-  /// Mon–Sun pending IOUs created that day (pay / borrowed side).
   final List<double> lendPayWeek;
   final double lastWeekSpend;
-  /// Outstanding pending lend/borrow (viewer perspective).
   final double friendPendingCollect;
   final double friendPendingPay;
-  /// Pending entries **created** Mon–today this calendar week.
   final double friendAddedThisWeekCollect;
   final double friendAddedThisWeekPay;
-
-  static bool _hasLendWeekChart(List<double> c, List<double> p) {
-    if (c.length != 7 || p.length != 7) return false;
-    for (var i = 0; i < 7; i++) {
-      if (c[i] > 0 || p[i] > 0) return true;
-    }
-    return false;
-  }
 
   @override
   Widget build(BuildContext context) {
     final formatted = AppCurrency.format(weekSpend, currencyCode);
-    final changePct = lastWeekSpend > 0 ? (((weekSpend - lastWeekSpend) / lastWeekSpend) * 100).round().abs() : null;
+    final changePct = lastWeekSpend > 0
+        ? (((weekSpend - lastWeekSpend) / lastWeekSpend) * 100).round().abs()
+        : null;
     final isUp = weekSpend >= lastWeekSpend;
     final showDocChart = weeklyData.length == 7;
-    final showLendChart = _hasLendWeekChart(lendCollectWeek, lendPayWeek);
-    final double overlayH = (showDocChart ? 56.0 : 0.0) +
-        (showDocChart && showLendChart ? 6.0 : 0.0) +
-        (showLendChart ? 46.0 : 0.0);
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [BillyTheme.emerald50, BillyTheme.emerald100.withValues(alpha: 0.5)],
+          colors: [Color(0xFF047857), Color(0xFF065F46)],
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: BillyTheme.emerald100),
       ),
       child: Stack(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Last 7 days',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: BillyTheme.emerald700.withValues(alpha: 0.7),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                formatted,
-                style: const TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF064E3B),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                weekSubtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: BillyTheme.emerald700.withValues(alpha: 0.55),
-                ),
-              ),
-              if (documentCountThisWeek != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '${documentCountThisWeek!} ${documentCountThisWeek == 1 ? 'receipt or invoice' : 'receipts & invoices'} in the last 7 days (same rules as the total above)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: BillyTheme.emerald700.withValues(alpha: 0.65),
-                  ),
-                ),
-              ],
-              if (friendPendingCollect > 0 || friendPendingPay > 0) ...[
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: BillyTheme.emerald100),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Lend / borrow (pending)',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: BillyTheme.emerald700.withValues(alpha: 0.75),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _FriendMiniStat(
-                              label: 'To collect',
-                              amount: friendPendingCollect,
-                              currencyCode: currencyCode,
-                              positive: true,
-                            ),
-                          ),
-                          Expanded(
-                            child: _FriendMiniStat(
-                              label: 'To pay',
-                              amount: friendPendingPay,
-                              currencyCode: currencyCode,
-                              positive: false,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (friendAddedThisWeekCollect > 0 || friendAddedThisWeekPay > 0) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Added this week: +${AppCurrency.format(friendAddedThisWeekCollect, currencyCode)} collect · '
-                          '+${AppCurrency.format(friendAddedThisWeekPay, currencyCode)} owe',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                            color: BillyTheme.gray600,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-              if (changePct != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${isUp ? 'Up' : 'Down'} $changePct% vs prior 7 days',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isUp ? BillyTheme.red400 : BillyTheme.emerald600,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  _LegendDot(
-                    color: BillyTheme.emerald500,
-                    label: 'Spend · 7-day window',
-                  ),
-                  if (showLendChart) ...[
-                    const SizedBox(width: 14),
-                    _LegendDot(color: BillyTheme.emerald600, label: 'Collect'),
-                    const SizedBox(width: 10),
-                    _LegendDot(color: BillyTheme.red400, label: 'Owe'),
-                  ],
-                ],
-              ),
-              if (overlayH > 0) SizedBox(height: overlayH + 4),
-            ],
-          ),
-          if (overlayH > 0)
+          // Mini chart positioned behind content
+          if (showDocChart)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
-              height: overlayH,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (showDocChart)
-                    SizedBox(
-                      height: 56,
-                      child: Opacity(
-                        opacity: 0.5,
-                        child: _MiniAreaChart(data: weeklyData),
-                      ),
-                    ),
-                  if (showDocChart && showLendChart) const SizedBox(height: 6),
-                  if (showLendChart)
-                    SizedBox(
-                      height: 44,
-                      child: _LendBorrowWeekBarChart(
-                        collect: lendCollectWeek,
-                        pay: lendPayWeek,
-                      ),
-                    ),
-                ],
+              height: 80,
+              child: Opacity(
+                opacity: 0.2,
+                child: _MiniAreaChart(data: weeklyData),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total Spend',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Last 7 days',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  formatted,
+                  style: const TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (changePct != null)
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isUp
+                              ? Colors.red.withValues(alpha: 0.25)
+                              : Colors.green.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isUp
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${isUp ? '+' : '-'}$changePct%',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'vs prior 7 days',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (documentCountThisWeek != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.receipt_long_rounded,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${documentCountThisWeek!} ${documentCountThisWeek == 1 ? 'document' : 'documents'} this period',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                // Lend/borrow pending summary
+                if (friendPendingCollect > 0 || friendPendingPay > 0) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'LEND / BORROW',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.0,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _FriendMiniStat(
+                                label: 'To collect',
+                                amount: friendPendingCollect,
+                                currencyCode: currencyCode,
+                                positive: true,
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 28,
+                              color: Colors.white.withValues(alpha: 0.15),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 12),
+                                child: _FriendMiniStat(
+                                  label: 'To pay',
+                                  amount: friendPendingPay,
+                                  currencyCode: currencyCode,
+                                  positive: false,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (friendAddedThisWeekCollect > 0 ||
+                            friendAddedThisWeekPay > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Added this week: +${AppCurrency.format(friendAddedThisWeekCollect, currencyCode)} collect · '
+                            '+${AppCurrency.format(friendAddedThisWeekPay, currencyCode)} owe',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                // Spacer for the chart area
+                if (showDocChart) const SizedBox(height: 24),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -253,83 +292,24 @@ class _FriendMiniStat extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 10, color: BillyTheme.gray500)),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.white.withValues(alpha: 0.55),
+          ),
+        ),
         Text(
           AppCurrency.format(amount, currencyCode),
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: FontWeight.w700,
-            color: positive ? BillyTheme.emerald700 : BillyTheme.red500,
+            color: positive
+                ? const Color(0xFF6EE7B7)
+                : const Color(0xFFFCA5A5),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.color, required this.label});
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: BillyTheme.emerald700.withValues(alpha: 0.7))),
-      ],
-    );
-  }
-}
-
-/// Grouped bars: per day, collect (green) + owe (red) for pending entries created that day.
-class _LendBorrowWeekBarChart extends StatelessWidget {
-  const _LendBorrowWeekBarChart({required this.collect, required this.pay});
-  final List<double> collect;
-  final List<double> pay;
-
-  @override
-  Widget build(BuildContext context) {
-    var maxY = 1.0;
-    for (var i = 0; i < 7; i++) {
-      final sum = collect[i] + pay[i];
-      if (sum > maxY) maxY = sum;
-    }
-    maxY *= 1.15;
-
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        maxY: maxY,
-        minY: 0,
-        gridData: const FlGridData(show: false),
-        titlesData: const FlTitlesData(show: false),
-        borderData: FlBorderData(show: false),
-        barTouchData: BarTouchData(enabled: false),
-        barGroups: List.generate(7, (i) {
-          return BarChartGroupData(
-            x: i,
-            groupVertically: false,
-            barsSpace: 2,
-            barRods: [
-              BarChartRodData(
-                toY: collect[i],
-                color: BillyTheme.emerald600.withValues(alpha: 0.75),
-                width: 5,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
-              ),
-              BarChartRodData(
-                toY: pay[i],
-                color: BillyTheme.red400.withValues(alpha: 0.75),
-                width: 5,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
-              ),
-            ],
-          );
-        }),
-      ),
     );
   }
 }
@@ -340,7 +320,11 @@ class _MiniAreaChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final spots = data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList();
+    final spots = data
+        .asMap()
+        .entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value))
+        .toList();
     final maxY = data.reduce((a, b) => a > b ? a : b) * 1.3;
 
     return LineChart(
@@ -356,7 +340,7 @@ class _MiniAreaChart extends StatelessWidget {
           LineChartBarData(
             spots: spots,
             isCurved: true,
-            color: BillyTheme.emerald500,
+            color: Colors.white.withValues(alpha: 0.5),
             barWidth: 2,
             isStrokeCapRound: true,
             dotData: const FlDotData(show: false),
@@ -365,7 +349,10 @@ class _MiniAreaChart extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [BillyTheme.emerald500.withValues(alpha: 0.3), BillyTheme.emerald500.withValues(alpha: 0)],
+                colors: [
+                  Colors.white.withValues(alpha: 0.15),
+                  Colors.white.withValues(alpha: 0),
+                ],
               ),
             ),
           ),

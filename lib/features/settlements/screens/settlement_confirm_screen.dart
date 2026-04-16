@@ -37,7 +37,6 @@ class _SettlementConfirmScreenState
     setState(() => _processing = true);
     try {
       final client = Supabase.instance.client;
-      final uid = client.auth.currentUser?.id;
 
       await client.from('group_settlements').update({
         'status': 'confirmed',

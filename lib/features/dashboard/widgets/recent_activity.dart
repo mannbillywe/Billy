@@ -39,81 +39,139 @@ class RecentActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: items.map((item) {
-        final id = item.documentId;
-        final tappable = onItemTap != null && id != null && id.isNotEmpty;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Material(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: BillyTheme.gray100),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: List.generate(items.length, (index) {
+          final item = items[index];
+          final id = item.documentId;
+          final tappable = onItemTap != null && id != null && id.isNotEmpty;
+          final isLast = index == items.length - 1;
+
+          return Material(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
             child: InkWell(
               onTap: tappable ? () => onItemTap!(id) : null,
-              borderRadius: BorderRadius.circular(16),
               child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: BillyTheme.gray50),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2)),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: BillyTheme.emerald50,
-                      borderRadius: BorderRadius.circular(12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: isLast
+                    ? null
+                    : const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: BillyTheme.gray100, width: 1),
+                        ),
+                      ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: BillyTheme.emerald50,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        item.icon,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: BillyTheme.emerald600,
+                        ),
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      item.icon,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: BillyTheme.emerald600),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.vendor,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: BillyTheme.gray800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: BillyTheme.gray100,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  item.category,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: BillyTheme.gray600,
+                                  ),
+                                ),
+                              ),
+                              if (item.backdateHint != null &&
+                                  item.backdateHint!.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  item.backdateHint!,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFFC2410C),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          item.vendor,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
+                          '\u2212${AppCurrency.format(item.amount, currencyCode)}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: BillyTheme.gray800,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${item.category} \u2022 ${item.date}',
-                          style: const TextStyle(fontSize: 12, color: BillyTheme.gray500),
-                        ),
-                        if (item.backdateHint != null && item.backdateHint!.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            item.backdateHint!,
-                            style: const TextStyle(fontSize: 11, color: Color(0xFFC2410C), fontWeight: FontWeight.w500),
+                          item.date,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: BillyTheme.gray500,
                           ),
-                        ],
+                        ),
                       ],
                     ),
-                  ),
-                  Text(
-                    '\u2212${AppCurrency.format(item.amount, currencyCode)}',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
-                  ),
-                  if (tappable) ...[
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right, color: BillyTheme.gray400, size: 20),
+                    if (tappable) ...[
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: BillyTheme.gray400,
+                        size: 20,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-        );
-      }).toList(),
+          );
+        }),
+      ),
     );
   }
 }

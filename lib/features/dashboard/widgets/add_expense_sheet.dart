@@ -49,7 +49,18 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
   Future<void> _save() async {
     final vendor = _vendorCtrl.text.trim();
     final amount = double.tryParse(_amountCtrl.text.trim());
-    if (vendor.isEmpty || amount == null || amount <= 0) return;
+    if (vendor.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a vendor name')),
+      );
+      return;
+    }
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid amount greater than zero')),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
     try {

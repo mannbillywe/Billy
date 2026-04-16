@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/billy_theme.dart';
-import '../../../core/utils/document_date_range.dart';
 import '../../../providers/budgets_provider.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/lend_borrow_provider.dart';
@@ -13,12 +12,10 @@ import '../../../providers/recurring_provider.dart';
 import '../../../providers/usage_limits_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/utils/document_backdate_hint.dart';
-import '../../transactions/screens/transaction_detail_screen.dart';
 import '../utils/dashboard_spend_math.dart';
 import '../widgets/insights_card.dart';
 import '../widgets/money_flow_chart.dart';
 import '../widgets/money_os_cards.dart';
-import '../widgets/ocr_banner.dart';
 import '../widgets/quick_actions.dart';
 import '../widgets/recent_activity.dart';
 import '../widgets/spend_hero.dart';
@@ -26,18 +23,18 @@ import '../widgets/spend_hero.dart';
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({
     super.key,
-    this.onOpenScan,
     this.onExportData,
     this.onCreateBill,
     this.onOpenAllDocuments,
     this.onOpenDocumentDetail,
+    this.onSwitchToPlan,
   });
 
-  final VoidCallback? onOpenScan;
   final VoidCallback? onExportData;
   final VoidCallback? onCreateBill;
   final void Function(String documentId)? onOpenDocumentDetail;
   final VoidCallback? onOpenAllDocuments;
+  final VoidCallback? onSwitchToPlan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -104,7 +101,6 @@ class DashboardScreen extends ConsumerWidget {
       );
     }).toList();
 
-    // Match server spend queries and Analytics overview: drafts are not "saved" spend.
     final insightDocs = allDocs.where((d) => (d['status'] as String?) != 'draft');
     double totalExpenses = 0;
     final catMap = <String, double>{};
@@ -135,6 +131,8 @@ class DashboardScreen extends ConsumerWidget {
                 backgroundColor: BillyTheme.gray100,
               ),
             ),
+
+          // ── Hero Card ──
           SpendHero(
             weekSpend: weekSpend,
             currencyCode: currency,
@@ -149,32 +147,42 @@ class DashboardScreen extends ConsumerWidget {
             friendAddedThisWeekCollect: addedLb.collect,
             friendAddedThisWeekPay: addedLb.pay,
           ),
-          const SizedBox(height: 16),
+
+          const SizedBox(height: 24),
+
+          // ── Financial Command Center ──
           QuickActions(
             onCreateBill: onCreateBill,
             onOpenAllDocuments: onOpenAllDocuments,
             onExportData: onExportData,
           ),
+
           // ── OCR usage pill ──
           if (usageLimits != null) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             OcrUsageCard(
               used: (usageLimits['ocr_scans_used'] as num?)?.toInt() ?? 0,
               limit: (usageLimits['ocr_scans_limit'] as num?)?.toInt() ?? 5,
             ),
           ],
-          // ── Budget status ──
+
+          // ── Active Budgets ──
           if (budgets.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            _SectionHeader(
+              title: 'ACTIVE BUDGETS',
+              actionLabel: 'Manage All',
+              onAction: onSwitchToPlan,
+            ),
             const SizedBox(height: 12),
             BudgetStatusCard(
               budgets: budgets,
               docs: allDocs,
               currencyCode: currency,
-              onViewAll: () {
-                // Switch to Plan tab
-              },
+              onViewAll: onSwitchToPlan,
             ),
           ],
+
           // ── Upcoming recurring bills ──
           if (recurring.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -183,7 +191,10 @@ class DashboardScreen extends ConsumerWidget {
               currencyCode: currency,
             ),
           ],
-          const SizedBox(height: 16),
+
+          const SizedBox(height: 28),
+
+          // ── Money Flow + Insights side-by-side ──
           Row(
             children: [
               Expanded(child: MoneyFlowChart(data: dailyData)),
@@ -200,17 +211,14 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ],
           ),
+
+          // ── Recent Activity ──
           if (recentItems.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Recent', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: BillyTheme.gray800)),
-                TextButton(
-                  onPressed: onOpenAllDocuments,
-                  child: const Text('View all'),
-                ),
-              ],
+            const SizedBox(height: 28),
+            _SectionHeader(
+              title: 'RECENT ACTIVITY',
+              actionLabel: 'View All',
+              onAction: onOpenAllDocuments,
             ),
             const SizedBox(height: 12),
             RecentActivity(
@@ -221,6 +229,49 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Reusable v5-style section header: ALL-CAPS title + optional action link.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1.2,
+            color: BillyTheme.gray500,
+          ),
+        ),
+        if (actionLabel != null)
+          GestureDetector(
+            onTap: onAction,
+            child: Text(
+              actionLabel!,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: BillyTheme.emerald600,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

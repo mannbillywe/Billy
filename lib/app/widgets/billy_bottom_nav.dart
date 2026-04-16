@@ -33,69 +33,102 @@ class BillyBottomNav extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: SizedBox(
+          height: 60,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Row(
                 children: [
-                  ..._buildNavItems(0, 2),
-                  const SizedBox(width: 56),
-                  ..._buildNavItems(2, 5),
+                  _navItem(0),
+                  _navItem(1),
+                  const SizedBox(width: 64),
+                  _navItem(3),
+                  _navItem(4),
                 ],
               ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: -28,
-              child: Center(
-                child: GestureDetector(
-                  onTap: onFabTap,
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: BillyTheme.emerald600,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: BillyTheme.emerald600.withValues(alpha: 0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+              Positioned(
+                left: 0,
+                right: 0,
+                top: -24,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: onFabTap,
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: BillyTheme.emerald600,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: BillyTheme.emerald600.withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.camera_alt_rounded, size: 24, color: Colors.white),
                     ),
-                    child: const Icon(Icons.camera_alt_rounded, size: 26, color: Colors.white),
                   ),
                 ),
               ),
-            ),
-          ],
+              // "People" (index 2) sits behind the FAB as a tap target
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                top: 0,
+                child: Center(
+                  child: SizedBox(
+                    width: 64,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () => onTap(2),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _labels[2],
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w500,
+                                color: activeIndex == 2 ? BillyTheme.emerald600 : BillyTheme.gray400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  List<Widget> _buildNavItems(int start, int end) {
-    return List.generate(end - start, (i) {
-      final index = start + i;
-      final isActive = activeIndex == index;
-      return Expanded(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => onTap(index),
+  Widget _navItem(int index) {
+    final isActive = activeIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onTap(index),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 _icons[index],
-                size: 24,
+                size: 22,
                 color: isActive ? BillyTheme.emerald600 : BillyTheme.gray400,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 _labels[index],
                 style: TextStyle(
@@ -107,7 +140,7 @@ class BillyBottomNav extends StatelessWidget {
             ],
           ),
         ),
-      );
-    });
+      ),
+    );
   }
 }
