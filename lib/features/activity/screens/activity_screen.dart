@@ -89,25 +89,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     return grouped;
   }
 
-  double _totalSpending(List<Map<String, dynamic>> events) {
-    double total = 0;
-    for (final e in events) {
-      final amount = (e['amount'] as num?)?.toDouble() ?? 0;
-      if (amount < 0) total += amount.abs();
-    }
-    return total;
-  }
-
-  double _sharedTotal(List<Map<String, dynamic>> events) {
-    double total = 0;
-    for (final e in events) {
-      final type = e['event_type'] as String? ?? '';
-      final amount = (e['amount'] as num?)?.toDouble() ?? 0;
-      if (type.contains('group_expense') && amount < 0) total += amount.abs();
-    }
-    return total;
-  }
-
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(activityFeedProvider);
@@ -119,7 +100,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       child: feedAsync.when(
         data: (events) {
           final filtered = _applyFilters(events);
-          return _buildBody(filtered, events, currency);
+          return _buildBody(filtered, currency);
         },
         loading: () => const Center(
           child: CircularProgressIndicator(color: BillyTheme.emerald600),
@@ -129,7 +110,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     );
   }
 
-  Widget _buildBody(List<Map<String, dynamic>> filtered, List<Map<String, dynamic>> allEvents, String? currency) {
+  Widget _buildBody(List<Map<String, dynamic>> filtered, String? currency) {
     final grouped = _groupByDate(filtered);
     final sliverChildren = <Widget>[];
 
@@ -154,9 +135,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         ));
       }
 
-      sliverChildren.add(SliverToBoxAdapter(
-        child: _buildSummaryCard(allEvents, currency),
-      ));
     }
 
     sliverChildren.add(const SliverToBoxAdapter(child: SizedBox(height: 120)));
@@ -317,114 +295,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           color: BillyTheme.gray400,
         ),
       ),
-    );
-  }
-
-  Widget _buildSummaryCard(List<Map<String, dynamic>> events, String? currency) {
-    final total = _totalSpending(events);
-    final shared = _sharedTotal(events);
-    final personal = total - shared;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [BillyTheme.emerald700, BillyTheme.emerald600],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'MONTHLY SPENDING FLOW',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.2,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              AppCurrency.format(total, currency),
-              style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: -1,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Total spending across ${events.length} transactions',
-              style: const TextStyle(fontSize: 13, color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              height: 1,
-              color: Colors.white.withValues(alpha: 0.2),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _summaryBreakdownItem(
-                    'Shared',
-                    shared,
-                    Icons.group_outlined,
-                    currency,
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 36,
-                  color: Colors.white.withValues(alpha: 0.2),
-                ),
-                Expanded(
-                  child: _summaryBreakdownItem(
-                    'Personal',
-                    personal,
-                    Icons.person_outline_rounded,
-                    currency,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _summaryBreakdownItem(String label, double amount, IconData icon, String? currency) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 14, color: Colors.white70),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          AppCurrency.format(amount, currency),
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
-        ),
-      ],
     );
   }
 

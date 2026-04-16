@@ -14,7 +14,6 @@ import '../../../providers/profile_provider.dart';
 import '../../../providers/recurring_provider.dart';
 import '../../../providers/week_spend_basis_provider.dart';
 import '../../documents/screens/documents_history_screen.dart';
-import '../widgets/ai_insights_panel.dart';
 
 String _categoryBucket(Map<String, dynamic> d) {
   final parts = (d['description'] as String?)?.split(',');
@@ -72,7 +71,6 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   String _range = '1M';
-  bool _showAi = false;
 
   @override
   Widget build(BuildContext context) {
@@ -361,15 +359,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               _SpikesCard(spikes: spikeEntries.take(3).toList(), avgDaily: avgDaily, currency: currency),
             if (spikeEntries.isNotEmpty) const SizedBox(height: 12),
 
-            // ── AI Insights toggle ──
-            _AiInsightsToggle(
-              isOpen: _showAi,
-              onToggle: () => setState(() => _showAi = !_showAi),
-            ),
-            if (_showAi) ...[
-              const SizedBox(height: 12),
-              AiInsightsPanel(rangePreset: _range),
-            ],
             const SizedBox(height: 24),
           ],
         ),
@@ -1407,48 +1396,3 @@ class _SpikesCard extends StatelessWidget {
   }
 }
 
-class _AiInsightsToggle extends StatelessWidget {
-  const _AiInsightsToggle({required this.isOpen, required this.onToggle});
-  final bool isOpen;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onToggle,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFEDE9FE)),
-            gradient: isOpen ? null : const LinearGradient(colors: [Color(0xFFFAF5FF), Colors.white]),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(color: const Color(0xFFEDE9FE), borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.auto_awesome_rounded, size: 20, color: Color(0xFF8B5CF6)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('AI Insights', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
-                    Text(isOpen ? 'Money Coach + JAI Insight' : 'Tap to expand AI-powered analysis', style: const TextStyle(fontSize: 12, color: BillyTheme.gray500)),
-                  ],
-                ),
-              ),
-              Icon(isOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: BillyTheme.gray400),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
