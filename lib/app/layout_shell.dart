@@ -261,7 +261,9 @@ class _LayoutShellState extends ConsumerState<LayoutShell> {
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-    );
+    ).then((_) {
+      ref.invalidate(profileProvider);
+    });
   }
 
   void _openGoatMode() {
