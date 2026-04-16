@@ -47,6 +47,22 @@ double _matchSpendToBudget(
   return catSpendByName[name] ?? catSpendByName[name.toLowerCase()] ?? 0;
 }
 
+/// Returns the YYYY-MM-DD string to bucket a document into for the daily chart,
+/// respecting the same axis used by the range filter.
+String? _bucketDateForDoc(Map<String, dynamic> d, WeekSpendBasis basis) {
+  switch (basis) {
+    case WeekSpendBasis.invoiceDate:
+      return d['date']?.toString().substring(0, 10);
+    case WeekSpendBasis.uploadDate:
+      return d['created_at']?.toString().substring(0, 10);
+    case WeekSpendBasis.hybrid:
+      // Prefer bill date, fall back to upload date (same logic as filter)
+      final billDate = d['date']?.toString();
+      if (billDate != null && billDate.length >= 10) return billDate.substring(0, 10);
+      return d['created_at']?.toString().substring(0, 10);
+  }
+}
+
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
 
@@ -100,7 +116,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       merchantMap[vendor] = (merchantMap[vendor] ?? 0) + amount;
       merchantCount[vendor] = (merchantCount[vendor] ?? 0) + 1;
 
-      final dateStr = d['date']?.toString().substring(0, 10);
+      // Bucket into dailyMap using the same axis that the filter used
+      final dateStr = _bucketDateForDoc(d, weekBasis);
       if (dateStr != null) dailyMap[dateStr] = (dailyMap[dateStr] ?? 0) + amount;
     }
 
@@ -184,14 +201,15 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       }
     }
 
-    // Upcoming recurring
+    // Upcoming recurring (due in next 7 days, not past-due)
     int upcomingBills = 0;
     for (final r in recurring) {
       final nd = r['next_due'] as String?;
       if (nd == null) continue;
       final due = DateTime.tryParse(nd);
       if (due == null) continue;
-      if (due.difference(now).inDays <= 7) {
+      final daysUntil = due.difference(now).inDays;
+      if (daysUntil >= 0 && daysUntil <= 7) {
         upcomingBills++;
       }
     }
@@ -211,6 +229,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       prevCatMap: prevCatMap,
       budgetDetails: budgetDetails,
       totalExpenses: totalExpenses,
+      currency: currency,
     );
 
     return RefreshIndicator(
@@ -341,10 +360,11 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     required Map<String, double> prevCatMap,
     required List<_BudgetLine> budgetDetails,
     required double totalExpenses,
+    String? currency,
   }) {
     final tips = <_SavingTip>[];
+    String fmt(double v) => AppCurrency.formatCompact(v, currency);
 
-    // Categories that are discretionary and grew vs previous period
     const discretionary = {'Dining', 'Shopping', 'Entertainment', 'Food & Beverage', 'Subscriptions', 'Other'};
 
     for (final cat in sortedCats) {
@@ -357,17 +377,17 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       final grew = prev > 0 && current > prev;
       final growthPct = prev > 0 ? ((current - prev) / prev * 100).round() : 0;
 
-      // Over-budget category
       final budgetMatch = budgetDetails.where((b) => b.name.toLowerCase() == cat.key.toLowerCase()).firstOrNull;
       final overBudget = budgetMatch != null && budgetMatch.spent > budgetMatch.limit && budgetMatch.limit > 0;
       final overBy = overBudget ? budgetMatch.spent - budgetMatch.limit : 0.0;
 
       if (overBudget) {
+        final cutTarget = overBy * 0.5;
         tips.add(_SavingTip(
           category: cat.key,
           type: _SavingTipType.overBudget,
           amount: overBy,
-          description: 'Over budget by ${(overBy / budgetMatch.limit * 100).round()}%. Cut ${(overBy * 0.5).ceil()} to get back on track.',
+          description: 'Over budget by ${(overBy / budgetMatch.limit * 100).round()}%. Cut ${fmt(cutTarget)} to get back on track.',
           severity: 3,
         ));
       } else if (grew && isDiscretionary && growthPct > 15 && current > 100) {
@@ -376,7 +396,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           category: cat.key,
           type: _SavingTipType.growingFast,
           amount: saveable,
-          description: 'Up $growthPct% from last period. Cutting back halfway could save ~${saveable.round()}.',
+          description: 'Up $growthPct% from last period. Cutting back halfway could save ~${fmt(saveable)}.',
           severity: 2,
         ));
       } else if (isDiscretionary && pctOfTotal > 25) {
@@ -385,7 +405,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           category: cat.key,
           type: _SavingTipType.highShare,
           amount: saveable,
-          description: '${pctOfTotal.round()}% of total spend. A 20% cut would save ~${saveable.round()}.',
+          description: '${pctOfTotal.round()}% of total spend. A 20% cut would save ~${fmt(saveable)}.',
           severity: 1,
         ));
       }
@@ -1208,33 +1228,43 @@ class _PeriodSummaryStrip extends StatelessWidget {
   final WeekSpendBasis weekBasis;
   final String activeRange;
 
+  /// Compute totals and counts for all 3 ranges in a single pass over docs.
+  Map<String, ({double total, int count})> _computeAll() {
+    final ranges = {
+      '1W': DocumentDateRange.forFilter('1W'),
+      '1M': DocumentDateRange.forFilter('1M'),
+      '3M': DocumentDateRange.forFilter('3M'),
+    };
+    final result = <String, ({double total, int count})>{
+      '1W': (total: 0.0, count: 0),
+      '1M': (total: 0.0, count: 0),
+      '3M': (total: 0.0, count: 0),
+    };
+    for (final d in docs) {
+      if ((d['status'] as String?) == 'draft') continue;
+      final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+      for (final entry in ranges.entries) {
+        final key = entry.key;
+        final range = entry.value;
+        final inRange = DocumentDateRange.filterDocumentsForWeekBasis([d], range, weekBasis).isNotEmpty;
+        if (inRange) {
+          final prev = result[key]!;
+          result[key] = (total: prev.total + amt, count: prev.count + 1);
+        }
+      }
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
-    double total(String key) {
-      final range = DocumentDateRange.forFilter(key);
-      final filtered = DocumentDateRange.filterDocumentsForWeekBasis(docs, range, weekBasis);
-      var sum = 0.0;
-      for (final d in filtered) {
-        if ((d['status'] as String?) == 'draft') continue;
-        sum += (d['amount'] as num?)?.toDouble() ?? 0;
-      }
-      return sum;
-    }
-
-    int count(String key) {
-      final range = DocumentDateRange.forFilter(key);
-      final filtered = DocumentDateRange.filterDocumentsForWeekBasis(docs, range, weekBasis);
-      var c = 0;
-      for (final d in filtered) {
-        if ((d['status'] as String?) != 'draft') c++;
-      }
-      return c;
-    }
+    final precomputed = _computeAll();
 
     Widget card(String label, String rangeKey) {
       final isActive = activeRange == rangeKey;
-      final t = total(rangeKey);
-      final c = count(rangeKey);
+      final data = precomputed[rangeKey]!;
+      final t = data.total;
+      final c = data.count;
       return Expanded(
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
