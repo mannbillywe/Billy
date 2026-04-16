@@ -238,6 +238,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             ),
             const SizedBox(height: 16),
 
+            // ── Period summary strip (1W / 1M / 3M) ──
+            _PeriodSummaryStrip(docs: docs, currency: currency, weekBasis: weekBasis, activeRange: _range),
+            const SizedBox(height: 16),
+
             // ── Spend hero card ──
             _SpendHeroCard(
               totalExpenses: totalExpenses,
@@ -248,8 +252,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               daysInMonth: daysInMonth,
               dayOfMonth: dayOfMonth,
               currency: currency,
+              rangeLabel: _range,
             ),
             const SizedBox(height: 12),
+
+            // ── Top categories for selected period ──
+            if (sortedCats.isNotEmpty)
+              _TopCategoriesForPeriod(
+                categories: sortedCats.take(5).toList(),
+                totalExpenses: totalExpenses,
+                currency: currency,
+                rangeLabel: _range,
+              ),
+            if (sortedCats.isNotEmpty) const SizedBox(height: 12),
 
             // ── Quick stat pills ──
             Wrap(
@@ -439,7 +454,7 @@ class _SpendHeroCard extends StatelessWidget {
   const _SpendHeroCard({
     required this.totalExpenses, required this.docCount, required this.changePct,
     required this.avgDaily, required this.projected, required this.daysInMonth,
-    required this.dayOfMonth, this.currency,
+    required this.dayOfMonth, this.currency, required this.rangeLabel,
   });
   final double totalExpenses;
   final int docCount;
@@ -447,6 +462,16 @@ class _SpendHeroCard extends StatelessWidget {
   final double avgDaily, projected;
   final int daysInMonth, dayOfMonth;
   final String? currency;
+  final String rangeLabel;
+
+  String get _rangeTitle {
+    switch (rangeLabel) {
+      case '1W': return 'Spent this week';
+      case '3M': return 'Spent (3 months)';
+      case '1M':
+      default: return 'Spent this month';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -460,7 +485,7 @@ class _SpendHeroCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Total spend', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white70)),
+          Text(_rangeTitle, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white70)),
           const SizedBox(height: 4),
           Text(AppCurrency.format(totalExpenses, currency), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white)),
           const SizedBox(height: 8),
@@ -1042,6 +1067,226 @@ class _SavingsSuggestionsCard extends StatelessWidget {
           }),
         ],
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Top categories for the selected period — compact horizontal list
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _TopCategoriesForPeriod extends StatelessWidget {
+  const _TopCategoriesForPeriod({
+    required this.categories,
+    required this.totalExpenses,
+    this.currency,
+    required this.rangeLabel,
+  });
+  final List<MapEntry<String, double>> categories;
+  final double totalExpenses;
+  final String? currency;
+  final String rangeLabel;
+
+  static const _catColors = [
+    BillyTheme.emerald600,
+    BillyTheme.blue400,
+    Color(0xFFF59E0B),
+    BillyTheme.red400,
+    Color(0xFF8B5CF6),
+  ];
+
+  String get _periodLabel {
+    switch (rangeLabel) {
+      case '1W': return 'This week';
+      case '3M': return 'Last 3 months';
+      case '1M':
+      default: return 'This month';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: BillyTheme.gray50),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_fire_department_rounded, size: 18, color: Color(0xFFF59E0B)),
+              const SizedBox(width: 6),
+              Text('Top spending · $_periodLabel', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BillyTheme.gray800)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...categories.asMap().entries.map((e) {
+            final cat = e.value;
+            final pct = totalExpenses > 0 ? cat.value / totalExpenses : 0.0;
+            final color = _catColors[e.key % _catColors.length];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${e.key + 1}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cat.key,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: BillyTheme.gray800),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: pct.clamp(0.0, 1.0),
+                            backgroundColor: BillyTheme.gray100,
+                            valueColor: AlwaysStoppedAnimation(color),
+                            minHeight: 5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        AppCurrency.formatCompact(cat.value, currency),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: BillyTheme.gray800),
+                      ),
+                      Text(
+                        '${(pct * 100).round()}%',
+                        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Period summary strip: always shows 1W / 1M / 3M totals side-by-side
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _PeriodSummaryStrip extends StatelessWidget {
+  const _PeriodSummaryStrip({
+    required this.docs,
+    this.currency,
+    required this.weekBasis,
+    required this.activeRange,
+  });
+  final List<Map<String, dynamic>> docs;
+  final String? currency;
+  final WeekSpendBasis weekBasis;
+  final String activeRange;
+
+  @override
+  Widget build(BuildContext context) {
+    double total(String key) {
+      final range = DocumentDateRange.forFilter(key);
+      final filtered = DocumentDateRange.filterDocumentsForWeekBasis(docs, range, weekBasis);
+      var sum = 0.0;
+      for (final d in filtered) {
+        if ((d['status'] as String?) == 'draft') continue;
+        sum += (d['amount'] as num?)?.toDouble() ?? 0;
+      }
+      return sum;
+    }
+
+    int count(String key) {
+      final range = DocumentDateRange.forFilter(key);
+      final filtered = DocumentDateRange.filterDocumentsForWeekBasis(docs, range, weekBasis);
+      var c = 0;
+      for (final d in filtered) {
+        if ((d['status'] as String?) != 'draft') c++;
+      }
+      return c;
+    }
+
+    Widget card(String label, String rangeKey) {
+      final isActive = activeRange == rangeKey;
+      final t = total(rangeKey);
+      final c = count(rangeKey);
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+          decoration: BoxDecoration(
+            color: isActive ? BillyTheme.emerald50 : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isActive ? BillyTheme.emerald600.withValues(alpha: 0.4) : BillyTheme.gray100,
+              width: isActive ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isActive ? BillyTheme.emerald700 : BillyTheme.gray500,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                AppCurrency.formatCompact(t, currency),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: isActive ? BillyTheme.emerald700 : BillyTheme.gray800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$c items',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isActive ? BillyTheme.emerald600 : BillyTheme.gray400,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        card('1 Week', '1W'),
+        const SizedBox(width: 8),
+        card('1 Month', '1M'),
+        const SizedBox(width: 8),
+        card('3 Months', '3M'),
+      ],
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
+import '../../../core/utils/bill_date_check.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/group_expenses_provider.dart';
 import '../../../providers/groups_provider.dart';
@@ -167,7 +168,7 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
 
-    final draft = _buildReceipt();
+    var draft = _buildReceipt();
     final alloc = _effectiveAllocation(draft);
     if (alloc <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -226,6 +227,17 @@ class _ScanReviewPanelState extends ConsumerState<ScanReviewPanel> {
             }
           }
         }
+      }
+    }
+
+    // Old bill date detection: if the extracted bill date is stale, ask the user
+    final parsedBillDate = DateTime.tryParse(draft.date);
+    if (parsedBillDate != null && isBillDateStale(parsedBillDate) && mounted) {
+      final choice = await showBillDateChoiceDialog(context, billDate: parsedBillDate);
+      if (!mounted) return;
+      if (choice == BillDateChoice.useToday) {
+        _dateCtrl.text = DateTime.now().toIso8601String().substring(0, 10);
+        draft = _buildReceipt();
       }
     }
 

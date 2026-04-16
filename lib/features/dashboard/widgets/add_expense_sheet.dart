@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/billy_theme.dart';
+import '../../../core/utils/bill_date_check.dart';
 import '../../documents/models/document_category_source.dart';
 import '../../../providers/documents_provider.dart';
 import '../../../providers/profile_provider.dart';
@@ -67,6 +68,15 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         const SnackBar(content: Text('Enter a valid amount greater than zero')),
       );
       return;
+    }
+
+    // Check for old bill date
+    if (isBillDateStale(_date) && mounted) {
+      final choice = await showBillDateChoiceDialog(context, billDate: _date);
+      if (!mounted) return;
+      if (choice == BillDateChoice.useToday) {
+        _date = DateTime.now();
+      }
     }
 
     setState(() => _saving = true);
