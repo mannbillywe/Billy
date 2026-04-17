@@ -56,7 +56,7 @@ if ($env:SENTRY_DSN) {
     Write-Host "Using SENTRY_DSN from environment" -ForegroundColor Gray
 }
 # --no-wasm-dry-run: quieter CI/local logs (Flutter 3.27+ wasm dry run notice).
-# Avoid deploying from web/ without a build — see README.md (Vercel section).
+# Avoid deploying from web/ without a build - see README.md (Vercel section).
 & flutter build web --release @defineArgs @envDefines --no-wasm-dry-run
 if ($LASTEXITCODE -ne 0) {
     Write-Host "If the error mentions symlink support: enable Windows Developer Mode (Settings → System → For developers)." -ForegroundColor Yellow
@@ -70,7 +70,7 @@ if (Test-Path $vercelSrc) {
     Copy-Item -Force $vercelSrc $vercelDst
 }
 
-# Vercel serverless API routes (proxy for Edge Functions — avoids Safari CORS)
+# Vercel serverless API routes (proxy for Edge Functions - avoids Safari CORS)
 $apiSrc = Join-Path $projectRoot "web\api"
 $apiDst = Join-Path $buildWeb "api"
 if (Test-Path $apiSrc) {
@@ -87,7 +87,7 @@ if (-not (Test-Path $buildWeb)) {
 Write-Host "Deploying to Vercel..." -ForegroundColor Cyan
 if ($env:VERCEL_PROJECT_ID) {
     Write-Host "Using VERCEL_ORG_ID / VERCEL_PROJECT_ID (targets the Vercel project for that ID; production URL is on the project Domains tab)." -ForegroundColor Gray
-    Write-Host "Primary Billy web URL for this repo: https://web-iota-lilac-34.vercel.app — use the matching Project ID." -ForegroundColor DarkGray
+    Write-Host "Primary Billy web URL for this repo: https://web-iota-lilac-34.vercel.app - use the matching Project ID." -ForegroundColor DarkGray
 }
 Set-Location $buildWeb
 $scope = if ($env:VERCEL_SCOPE) { $env:VERCEL_SCOPE } else { "mannbillywes-projects" }
