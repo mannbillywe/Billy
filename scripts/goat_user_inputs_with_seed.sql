@@ -1,4 +1,4 @@
--- ============================================================================
+﻿-- ============================================================================
 -- Goat Mode user-input tables + seed data
 --
 -- WHAT THIS DOES
@@ -10,10 +10,10 @@
 --      3 obligations (rent / EMI / insurance).
 --
 -- HOW TO USE
---   Replace EVERY occurrence of <USER_UUID> below with the real auth user id,
---   then paste into Supabase SQL Editor and run. The script is idempotent:
+--   Edit ONE line below: set v_user_id := '...' to the real auth user UUID.
+--   Paste the whole file into Supabase SQL Editor and run. Idempotent:
 --     - tables use CREATE TABLE IF NOT EXISTS
---     - seed uses ON CONFLICT DO NOTHING / UPSERT so re-running is safe.
+--     - seed uses ON CONFLICT DO UPDATE so re-running is safe.
 --
 -- REQUIREMENTS
 --   - public.profiles row for that user must already exist (auth signup).
@@ -195,125 +195,151 @@ commit;
 
 -- ============================================================================
 -- SEED DATA
--- Replace <USER_UUID> with the real user id (4 occurrences) before running.
--- Re-running is safe (upsert / on-conflict).
+-- Edit the v_user_id value on the FIRST line of the DO block below.
+-- Everything else uses that one variable. Re-running is safe (upsert).
 -- ============================================================================
 
-begin;
+do $seed$
+declare
+  -- --------- EDIT THIS ONE LINE ---------
+  v_user_id uuid := '00000000-0000-0000-0000-000000000000';
+  -- ------------------------------------------------------------------------------------------------
+begin
+  if v_user_id = '00000000-0000-0000-0000-000000000000'::uuid then
+    raise exception 'Set v_user_id at the top of the DO block before running.';
+  end if;
 
--- 1) goat_user_inputs — 1 row per user, upsert on PK
-insert into public.goat_user_inputs (
-  user_id, monthly_income, income_currency, pay_frequency, salary_day,
-  emergency_fund_target_months, liquidity_floor,
-  household_size, dependents,
-  risk_tolerance, planning_horizon_months, tone_preference,
-  notes
-) values (
-  '<USER_UUID>'::uuid,
-  75000.00, 'INR', 'monthly', 1,
-  6.0,       25000.00,
-  3,         1,
-  'balanced', 24, 'direct',
-  jsonb_build_object(
-    'city', 'Bengaluru',
-    'employment', 'salaried',
-    'seeded_at', now()
+  if not exists (select 1 from public.profiles where id = v_user_id) then
+    raise exception 'No public.profiles row for user_id %.  Did you sign up first?', v_user_id;
+  end if;
+
+  -- 1) goat_user_inputs --- one row per user (PK upsert)
+  insert into public.goat_user_inputs (
+    user_id, monthly_income, income_currency, pay_frequency, salary_day,
+    emergency_fund_target_months, liquidity_floor,
+    household_size, dependents,
+    risk_tolerance, planning_horizon_months, tone_preference,
+    notes
+  ) values (
+    v_user_id,
+    75000.00, 'INR', 'monthly', 1,
+    6.0,       25000.00,
+    3,         1,
+    'balanced', 24, 'direct',
+    jsonb_build_object(
+      'city', 'Bengaluru',
+      'employment', 'salaried',
+      'seeded_at', now()
+    )
   )
-)
-on conflict (user_id) do update set
-  monthly_income               = excluded.monthly_income,
-  income_currency              = excluded.income_currency,
-  pay_frequency                = excluded.pay_frequency,
-  salary_day                   = excluded.salary_day,
-  emergency_fund_target_months = excluded.emergency_fund_target_months,
-  liquidity_floor              = excluded.liquidity_floor,
-  household_size               = excluded.household_size,
-  dependents                   = excluded.dependents,
-  risk_tolerance               = excluded.risk_tolerance,
-  planning_horizon_months      = excluded.planning_horizon_months,
-  tone_preference              = excluded.tone_preference,
-  notes                        = excluded.notes,
-  updated_at                   = now();
+  on conflict (user_id) do update set
+    monthly_income               = excluded.monthly_income,
+    income_currency              = excluded.income_currency,
+    pay_frequency                = excluded.pay_frequency,
+    salary_day                   = excluded.salary_day,
+    emergency_fund_target_months = excluded.emergency_fund_target_months,
+    liquidity_floor              = excluded.liquidity_floor,
+    household_size               = excluded.household_size,
+    dependents                   = excluded.dependents,
+    risk_tolerance               = excluded.risk_tolerance,
+    planning_horizon_months      = excluded.planning_horizon_months,
+    tone_preference              = excluded.tone_preference,
+    notes                        = excluded.notes,
+    updated_at                   = now();
 
+  -- 2) goat_goals --- 4 realistic goals. Deterministic ids so reruns dedupe.
+  insert into public.goat_goals (
+    id, user_id, goal_type, title,
+    target_amount, current_amount, target_date,
+    priority, status, metadata
+  )
+  select
+    md5(v_user_id::text || ':' || g.key)::uuid,
+    v_user_id,
+    g.goal_type, g.title,
+    g.target_amount, g.current_amount, g.target_date,
+    g.priority, 'active',
+    jsonb_build_object('seeded', true, 'key', g.key)
+  from (values
+    ('emergency_fund_6m', 'emergency_fund', 'Emergency fund - 6 months expenses',
+       450000.00,  95000.00,  (current_date + interval '12 months')::date, 1),
+    ('goa_trip',          'travel',         'Goa trip 2026',
+        85000.00,  22000.00,  (current_date + interval '6 months')::date,  3),
+    ('cc_payoff',         'debt_payoff',    'Pay off HDFC credit card',
+        48000.00,  12000.00,  (current_date + interval '4 months')::date,  2),
+    ('laptop_upgrade',    'purchase',       'MacBook Air M4 upgrade',
+       130000.00,  40000.00,  (current_date + interval '10 months')::date, 4)
+  ) as g(key, goal_type, title, target_amount, current_amount, target_date, priority)
+  on conflict (id) do update set
+    target_amount  = excluded.target_amount,
+    current_amount = excluded.current_amount,
+    target_date    = excluded.target_date,
+    priority       = excluded.priority,
+    title          = excluded.title,
+    updated_at     = now();
 
--- 2) goat_goals — 4 realistic goals. Deterministic IDs so re-runs dedupe.
---    (uuid v5-style: derive a stable id from user_id + goal key).
-insert into public.goat_goals (
-  id, user_id, goal_type, title,
-  target_amount, current_amount, target_date,
-  priority, status, metadata
-)
-select
-  md5('<USER_UUID>' || ':' || g.key)::uuid,
-  '<USER_UUID>'::uuid,
-  g.goal_type, g.title,
-  g.target_amount, g.current_amount, g.target_date,
-  g.priority, 'active',
-  jsonb_build_object('seeded', true, 'key', g.key)
-from (values
-  ('emergency_fund_6m', 'emergency_fund', 'Emergency fund - 6 months expenses',
-     450000.00,  95000.00,  (current_date + interval '12 months')::date, 1),
-  ('goa_trip',          'travel',         'Goa trip 2026',
-      85000.00,  22000.00,  (current_date + interval '6 months')::date,  3),
-  ('cc_payoff',         'debt_payoff',    'Pay off HDFC credit card',
-      48000.00,  12000.00,  (current_date + interval '4 months')::date,  2),
-  ('laptop_upgrade',    'purchase',       'MacBook Air M4 upgrade',
-     130000.00,  40000.00,  (current_date + interval '10 months')::date, 4)
-) as g(key, goal_type, title, target_amount, current_amount, target_date, priority)
-on conflict (id) do update set
-  target_amount  = excluded.target_amount,
-  current_amount = excluded.current_amount,
-  target_date    = excluded.target_date,
-  priority       = excluded.priority,
-  title          = excluded.title,
-  updated_at     = now();
+  -- 3) goat_obligations --- rent, home-loan EMI, term insurance
+  insert into public.goat_obligations (
+    id, user_id, obligation_type, lender_name,
+    current_outstanding, monthly_due, due_day, interest_rate,
+    cadence, status, metadata
+  )
+  select
+    md5(v_user_id::text || ':' || o.key)::uuid,
+    v_user_id,
+    o.obligation_type, o.lender_name,
+    o.current_outstanding, o.monthly_due, o.due_day, o.interest_rate,
+    'monthly', 'active',
+    jsonb_build_object('seeded', true, 'key', o.key)
+  from (values
+    ('rent',         'rent',      'Landlord (Koramangala 2BHK)',
+       null::numeric,  28000.00,  5,  null::numeric),
+    ('home_loan',    'emi',       'SBI Home Loan',
+      1850000.00,     22500.00, 10,  8.500),
+    ('term_ins',     'insurance', 'HDFC Life Click 2 Protect',
+       null::numeric,   1800.00, 15,  null::numeric)
+  ) as o(key, obligation_type, lender_name, current_outstanding, monthly_due, due_day, interest_rate)
+  on conflict (id) do update set
+    current_outstanding = excluded.current_outstanding,
+    monthly_due         = excluded.monthly_due,
+    due_day             = excluded.due_day,
+    interest_rate       = excluded.interest_rate,
+    lender_name         = excluded.lender_name,
+    updated_at          = now();
 
-
--- 3) goat_obligations — rent, home-loan EMI, term insurance
-insert into public.goat_obligations (
-  id, user_id, obligation_type, lender_name,
-  current_outstanding, monthly_due, due_day, interest_rate,
-  cadence, status, metadata
-)
-select
-  md5('<USER_UUID>' || ':' || o.key)::uuid,
-  '<USER_UUID>'::uuid,
-  o.obligation_type, o.lender_name,
-  o.current_outstanding, o.monthly_due, o.due_day, o.interest_rate,
-  'monthly', 'active',
-  jsonb_build_object('seeded', true, 'key', o.key)
-from (values
-  ('rent',         'rent',      'Landlord (Koramangala 2BHK)',
-     null,       28000.00,  5,  null),
-  ('home_loan',    'emi',       'SBI Home Loan',
-    1850000.00,  22500.00, 10,  8.500),
-  ('term_ins',     'insurance', 'HDFC Life Click 2 Protect',
-     null,        1800.00, 15,  null)
-) as o(key, obligation_type, lender_name, current_outstanding, monthly_due, due_day, interest_rate)
-on conflict (id) do update set
-  current_outstanding = excluded.current_outstanding,
-  monthly_due         = excluded.monthly_due,
-  due_day             = excluded.due_day,
-  interest_rate       = excluded.interest_rate,
-  lender_name         = excluded.lender_name,
-  updated_at          = now();
-
-commit;
+  raise notice 'Seeded goat_user_inputs/goals/obligations for user %', v_user_id;
+end
+$seed$;
 
 
 -- ============================================================================
--- VERIFY
+-- VERIFY --- paste the same UUID here once (editor can't share vars across
+-- statements). If you trust the seed, you can skip this block.
 -- ============================================================================
-select 'goat_user_inputs' as tbl, count(*) as rows
-from   public.goat_user_inputs where user_id = '<USER_UUID>'::uuid
-union all
-select 'goat_goals',        count(*)
-from   public.goat_goals       where user_id = '<USER_UUID>'::uuid
-union all
-select 'goat_obligations',  count(*)
-from   public.goat_obligations where user_id = '<USER_UUID>'::uuid;
+do $verify$
+declare
+  v_user_id uuid := '00000000-0000-0000-0000-000000000000';  -- same UUID as above
+  r record;
+begin
+  if v_user_id = '00000000-0000-0000-0000-000000000000'::uuid then
+    return;
+  end if;
+  for r in
+    select 'goat_user_inputs' as tbl, count(*)::int as rows
+      from public.goat_user_inputs where user_id = v_user_id
+    union all
+    select 'goat_goals',       count(*)::int
+      from public.goat_goals      where user_id = v_user_id
+    union all
+    select 'goat_obligations', count(*)::int
+      from public.goat_obligations where user_id = v_user_id
+  loop
+    raise notice '%: % rows', r.tbl, r.rows;
+  end loop;
+end
+$verify$;
 
--- Expected:
---   goat_user_inputs  1
---   goat_goals        4
---   goat_obligations  3
+-- Expected notices:
+--   goat_user_inputs: 1 rows
+--   goat_goals:       4 rows
+--   goat_obligations: 3 rows
