@@ -1,270 +1,393 @@
--- ╔══════════════════════════════════════════════════════════════════════╗
--- ║  Billy Seed Data — User "Manng"                                    ║
--- ║  ~1 year of realistic financial data (Apr 2025 → Apr 2026)         ║
--- ║  Paste into Supabase SQL Editor and run.                           ║
--- ║  ⚠  Replace <USER_UUID> with the actual auth.users UUID for Manng  ║
--- ╚══════════════════════════════════════════════════════════════════════╝
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║  Billy — FULL RESET + 12-month daily seed for user Nitin                ║
+-- ║  Target user: f308f807-00eb-46ce-9468-63cd7c8d3c0f                      ║
+-- ║                                                                          ║
+-- ║  What this does                                                          ║
+-- ║  --------------                                                          ║
+-- ║  1. WIPES every row that belongs to the target user across every table  ║
+-- ║     the app and Goat Mode read/write (transactions, documents, budgets, ║
+-- ║     recurring_series, lend_borrow_entries, activity_events, accounts,   ║
+-- ║     goat_* tables). Other users are untouched.                          ║
+-- ║  2. Ensures default categories exist (no-op if already present).        ║
+-- ║  3. Seeds 5 accounts, 12 months of salary, and 365 days of expenses     ║
+-- ║     (5-10 realistic transactions per day, drawn from a vendor pool).    ║
+-- ║  4. Mirrors every expense into public.documents so the pre-Goat UI      ║
+-- ║     (dashboard cards, analytics totals, 7d/1W/1M/3M trend, category     ║
+-- ║     pie, savings tips) has data to render.                              ║
+-- ║  5. Seeds budgets, recurring_series, lend_borrow, goals, obligations,   ║
+-- ║     goat_user_inputs so Goat Mode reaches readiness L3.                 ║
+-- ║                                                                          ║
+-- ║  Run                                                                     ║
+-- ║  ---                                                                     ║
+-- ║  Paste into Supabase SQL Editor (service-role session), or              ║
+-- ║    psql "$DATABASE_URL" -f scripts/seed_manng_data.sql                  ║
+-- ║  Re-runnable — wipes-then-reseeds the target user every time.           ║
+-- ║                                                                          ║
+-- ║  !! DESTRUCTIVE FOR THE TARGET USER ONLY !!                             ║
+-- ║  ------------------------------------------                             ║
+-- ║  Do NOT run against a user whose real history you want to keep.         ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
 
--- ─── Step 0: Set the user UUID ───────────────────────────────────────
--- Run:  select id, email from auth.users;
--- Then replace every occurrence of the placeholder below.
 DO $$
 DECLARE
-  uid uuid;
+  uid           uuid := 'f308f807-00eb-46ce-9468-63cd7c8d3c0f';
+  today         date := current_date;
+  start_d       date := current_date - 364;   -- 365 days inclusive
+  d             date;
+  txn_count     int;
+  i             int;
+  pick          int;
+  mo            int;          -- month index 0..11 (oldest .. newest) for salary
+
+  -- Deterministic account ids so re-runs map payments cleanly.
+  acct_hdfc     uuid := 'a0f30880-0000-4001-a001-000000000001';
+  acct_sbi      uuid := 'a0f30880-0000-4001-a002-000000000002';
+  acct_cc       uuid := 'a0f30880-0000-4001-a003-000000000003';
+  acct_cash     uuid := 'a0f30880-0000-4001-a004-000000000004';
+  acct_mf       uuid := 'a0f30880-0000-4001-a005-000000000005';
+
+  -- Category ids (resolved below from defaults).
+  cat_groc      uuid;
+  cat_dine      uuid;
+  cat_trans     uuid;
+  cat_util      uuid;
+  cat_shop      uuid;
+  cat_subs      uuid;
+  cat_health    uuid;
+  cat_food      uuid;
+  cat_ent       uuid;
+  cat_other     uuid;
+
+  -- Parallel vendor arrays: vendors[i] ∈ cats[i] with amount ∈ [lo[i], hi[i]].
+  vendors       text[];
+  cats          uuid[];
+  pays          text[];          -- payment method per vendor
+  accts         uuid[];          -- account per vendor (follows pay method)
+  lo            int[];
+  hi            int[];
+
+  vendor_name   text;
+  vendor_cat    uuid;
+  vendor_pay    text;
+  vendor_acct   uuid;
+  vendor_amt    numeric(12,2);
+
+  salary_amt    numeric(12,2);
 BEGIN
-  -- ┌────────────────────────────────────────────────────────┐
-  -- │  PASTE YOUR UUID BELOW                                │
-  -- └────────────────────────────────────────────────────────┘
-  uid := 'PASTE-YOUR-UUID-HERE';
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = uid) THEN
+    RAISE EXCEPTION
+      'No profiles row for %. Sign the user up first, then rerun.', uid;
+  END IF;
 
-  RAISE NOTICE 'Seeding data for user: %', uid;
+  -- Deterministic "random" so every run of this script produces the same
+  -- shape. Comment this out for real variability.
+  PERFORM setseed(0.42);
 
-  -- ─── Step 1: Update profile ──────────────────────────────────────
-  UPDATE public.profiles SET
-    display_name       = 'Manng',
-    preferred_currency = 'INR',
-    goat_mode          = true,
-    updated_at         = now()
-  WHERE id = uid;
+  RAISE NOTICE '── Billy seed: full wipe + 12m daily for % ──', uid;
+  RAISE NOTICE 'date range        : % .. %', start_d, today;
 
-  -- ─── Step 2: Default categories (idempotent) ────────────────────
-  INSERT INTO public.categories (id, user_id, name, icon, color, is_default) VALUES
-    (gen_random_uuid(), NULL, 'Food & Beverage',  '🍔', '#F97316', true),
-    (gen_random_uuid(), NULL, 'Dining',           '🍽️', '#EF4444', true),
-    (gen_random_uuid(), NULL, 'Groceries',        '🛒', '#22C55E', true),
-    (gen_random_uuid(), NULL, 'Transportation',   '🚕', '#3B82F6', true),
-    (gen_random_uuid(), NULL, 'Shopping',         '🛍️', '#EC4899', true),
-    (gen_random_uuid(), NULL, 'Utilities',        '⚡', '#F59E0B', true),
-    (gen_random_uuid(), NULL, 'Entertainment',    '🎬', '#8B5CF6', true),
-    (gen_random_uuid(), NULL, 'Healthcare',       '🏥', '#EF4444', true),
-    (gen_random_uuid(), NULL, 'Education',        '📚', '#06B6D4', true),
-    (gen_random_uuid(), NULL, 'Housing',          '🏠', '#8B5CF6', true),
-    (gen_random_uuid(), NULL, 'Subscriptions',    '📱', '#10B981', true),
-    (gen_random_uuid(), NULL, 'Maintenance',      '🔧', '#6B7280', true),
-    (gen_random_uuid(), NULL, 'Stationery',       '✏️', '#A855F7', true),
-    (gen_random_uuid(), NULL, 'Equipment',        '💻', '#0EA5E9', true),
-    (gen_random_uuid(), NULL, 'Borrow',           '📥', '#EF4444', true),
-    (gen_random_uuid(), NULL, 'Lend',             '📤', '#06B6D4', true),
-    (gen_random_uuid(), NULL, 'Other',            '📦', '#6B7280', true)
-  ON CONFLICT DO NOTHING;
+  -- ─── 0. Profile flags ────────────────────────────────────────────────────
+  UPDATE public.profiles
+     SET display_name       = COALESCE(display_name, 'Nitin'),
+         preferred_currency = COALESCE(preferred_currency, 'INR'),
+         goat_mode          = true,
+         updated_at         = now()
+   WHERE id = uid;
 
-  -- ─── Step 3: Accounts ───────────────────────────────────────────
-  INSERT INTO public.accounts (id, user_id, name, type, institution, currency, current_balance, is_asset) VALUES
-    ('a0000001-0000-0000-0000-000000000001', uid, 'HDFC Savings',    'savings',     'HDFC Bank',    'INR', 245800.00, true),
-    ('a0000001-0000-0000-0000-000000000002', uid, 'SBI Salary',      'checking',    'SBI',          'INR', 58320.00,  true),
-    ('a0000001-0000-0000-0000-000000000003', uid, 'Amazon Pay ICICI','credit_card', 'ICICI Bank',   'INR', -12450.00, false),
-    ('a0000001-0000-0000-0000-000000000004', uid, 'Cash',            'cash',        NULL,           'INR', 3200.00,   true),
-    ('a0000001-0000-0000-0000-000000000005', uid, 'Groww MF',        'investment',  'Groww',        'INR', 125000.00, true)
-  ON CONFLICT (id) DO NOTHING;
+  -- ─── 1. WIPE every user-owned row (FK-safe order) ────────────────────────
+  DELETE FROM public.goat_mode_recommendations WHERE user_id = uid;
+  DELETE FROM public.goat_mode_job_events      WHERE user_id = uid;
+  DELETE FROM public.goat_mode_snapshots       WHERE user_id = uid;
+  DELETE FROM public.goat_mode_jobs            WHERE user_id = uid;
+  DELETE FROM public.goat_obligations          WHERE user_id = uid;
+  DELETE FROM public.goat_goals                WHERE user_id = uid;
+  DELETE FROM public.goat_user_inputs          WHERE user_id = uid;
 
-  -- ─── Helper: get category id by name ────────────────────────────
-  -- We'll use a temp table for quick lookups
-  CREATE TEMP TABLE _cat_map (name text, cid uuid) ON COMMIT DROP;
-  INSERT INTO _cat_map (name, cid)
-    SELECT c.name, c.id FROM public.categories c
-    WHERE c.user_id IS NULL OR c.user_id = uid;
+  DELETE FROM public.activity_events           WHERE user_id = uid;
+  DELETE FROM public.transactions              WHERE user_id = uid;
+  DELETE FROM public.documents                 WHERE user_id = uid;
+  DELETE FROM public.budgets                   WHERE user_id = uid;
+  DELETE FROM public.recurring_series          WHERE user_id = uid;
+  DELETE FROM public.lend_borrow_entries       WHERE user_id = uid;
+  DELETE FROM public.accounts                  WHERE user_id = uid;
 
-  -- ─── Step 4: Documents + Transactions (12 months) ──────────────
-  -- Each month gets a realistic mix of expenses
+  -- ─── 2. Default categories (idempotent) ──────────────────────────────────
+  INSERT INTO public.categories (id, user_id, name, icon, color, is_default)
+  SELECT gen_random_uuid(), NULL, c.name, c.icon, c.color, true
+  FROM (VALUES
+    ('Food & Beverage', '🍔', '#F97316'),
+    ('Dining',          '🍽️', '#EF4444'),
+    ('Groceries',       '🛒', '#22C55E'),
+    ('Transportation',  '🚕', '#3B82F6'),
+    ('Shopping',        '🛍️', '#EC4899'),
+    ('Utilities',       '⚡', '#F59E0B'),
+    ('Entertainment',   '🎬', '#8B5CF6'),
+    ('Healthcare',      '🏥', '#EF4444'),
+    ('Education',       '📚', '#06B6D4'),
+    ('Housing',         '🏠', '#8B5CF6'),
+    ('Subscriptions',   '📱', '#10B981'),
+    ('Maintenance',     '🔧', '#6B7280'),
+    ('Stationery',      '✏️', '#A855F7'),
+    ('Equipment',       '💻', '#0EA5E9'),
+    ('Borrow',          '📥', '#EF4444'),
+    ('Lend',            '📤', '#06B6D4'),
+    ('Other',           '📦', '#6B7280')
+  ) c(name, icon, color)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.categories x
+    WHERE x.user_id IS NULL AND x.name = c.name
+  );
 
-  -- ════════════════════ APRIL 2025 ════════════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              489.00,  'INR', '2025-04-03', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          2340.00,  'INR', '2025-04-05', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00,  'INR', '2025-04-07', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                345.00,  'INR', '2025-04-08', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Amazon',             4599.00,  'INR', '2025-04-10', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'DMart',              3120.00,  'INR', '2025-04-14', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'Cash', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Netflix',             649.00,  'INR', '2025-04-15', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              623.00,  'INR', '2025-04-18', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2800.00,  'INR', '2025-04-20', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  1850.00,  'INR', '2025-04-22', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Chai Point',          180.00,  'INR', '2025-04-25', (SELECT cid FROM _cat_map WHERE name='Food & Beverage' LIMIT 1), 'Food & Beverage', 'saved', 'Cash', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Decathlon',          3450.00,  'INR', '2025-04-28', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual');
+  -- Resolve category ids.
+  SELECT id INTO cat_groc   FROM public.categories WHERE user_id IS NULL AND name='Groceries'       LIMIT 1;
+  SELECT id INTO cat_dine   FROM public.categories WHERE user_id IS NULL AND name='Dining'          LIMIT 1;
+  SELECT id INTO cat_trans  FROM public.categories WHERE user_id IS NULL AND name='Transportation'  LIMIT 1;
+  SELECT id INTO cat_util   FROM public.categories WHERE user_id IS NULL AND name='Utilities'       LIMIT 1;
+  SELECT id INTO cat_shop   FROM public.categories WHERE user_id IS NULL AND name='Shopping'        LIMIT 1;
+  SELECT id INTO cat_subs   FROM public.categories WHERE user_id IS NULL AND name='Subscriptions'   LIMIT 1;
+  SELECT id INTO cat_health FROM public.categories WHERE user_id IS NULL AND name='Healthcare'      LIMIT 1;
+  SELECT id INTO cat_food   FROM public.categories WHERE user_id IS NULL AND name='Food & Beverage' LIMIT 1;
+  SELECT id INTO cat_ent    FROM public.categories WHERE user_id IS NULL AND name='Entertainment'   LIMIT 1;
+  SELECT id INTO cat_other  FROM public.categories WHERE user_id IS NULL AND name='Other'           LIMIT 1;
 
-  -- ════════════════════ MAY 2025 ════════════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    (gen_random_uuid(), uid, 'receipt',  'Reliance Fresh',     1890.00,  'INR', '2025-05-02', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Ola',                 278.00,  'INR', '2025-05-04', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'PVR Cinemas',         780.00,  'INR', '2025-05-06', (SELECT cid FROM _cat_map WHERE name='Entertainment' LIMIT 1),   'Entertainment',   'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Spotify Premium',     119.00,  'INR', '2025-05-07', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              725.00,  'INR', '2025-05-09', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00,  'INR', '2025-05-10', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Apollo Pharmacy',     890.00,  'INR', '2025-05-12', (SELECT cid FROM _cat_map WHERE name='Healthcare' LIMIT 1),      'Healthcare',      'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          2670.00,  'INR', '2025-05-15', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Myntra',             2199.00,  'INR', '2025-05-18', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   3100.00,  'INR', '2025-05-22', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2100.00,  'INR', '2025-05-24', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              410.00,  'INR', '2025-05-28', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI',  '{"source":"manual"}', 'manual');
+  -- ─── 3. Accounts (known ids; FK targets for transactions below) ──────────
+  INSERT INTO public.accounts
+    (id, user_id, name, type, institution, currency, current_balance, is_asset)
+  VALUES
+    (acct_hdfc, uid, 'HDFC Savings',     'savings',     'HDFC Bank',  'INR', 245800.00, true),
+    (acct_sbi,  uid, 'SBI Salary',       'checking',    'SBI',        'INR',  58320.00, true),
+    (acct_cc,   uid, 'ICICI Amazon Pay', 'credit_card', 'ICICI Bank', 'INR', -12450.00, false),
+    (acct_cash, uid, 'Cash',             'cash',        NULL,         'INR',   3200.00, true),
+    (acct_mf,   uid, 'Groww MF',         'investment',  'Groww',      'INR', 125000.00, true);
 
-  -- ════════════════════ JUNE 2025 ════════════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    (gen_random_uuid(), uid, 'receipt',  'DMart',              3540.00,  'INR', '2025-06-01', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'Cash',  '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Rapido',              165.00,  'INR', '2025-06-03', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI',   '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Flipkart',           7899.00,  'INR', '2025-06-05', (SELECT cid FROM _cat_map WHERE name='Equipment' LIMIT 1),       'Equipment',       'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Netflix',             649.00,  'INR', '2025-06-07', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Starbucks',           520.00,  'INR', '2025-06-10', (SELECT cid FROM _cat_map WHERE name='Food & Beverage' LIMIT 1), 'Food & Beverage', 'saved', 'UPI',   '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'AWS',                1250.00,  'INR', '2025-06-12', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                412.00,  'INR', '2025-06-15', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI',   '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Lenskart',           2490.00,  'INR', '2025-06-18', (SELECT cid FROM _cat_map WHERE name='Healthcare' LIMIT 1),      'Healthcare',      'saved', 'UPI',   '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  1980.00,  'INR', '2025-06-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI',   '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              598.00,  'INR', '2025-06-24', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI',   '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - Indian Oil', 2650.00, 'INR', '2025-06-27', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1), 'Transportation', 'saved', 'UPI', '{"source":"manual"}', 'manual');
+  -- ─── 4. Vendor pool (index-aligned arrays) ───────────────────────────────
+  vendors := ARRAY[
+    -- Groceries (0-4)
+    'BigBasket','DMart','Reliance Fresh','Spencer''s','More Supermarket',
+    -- Dining (5-10)
+    'Swiggy','Zomato','Dominos','KFC','McDonald''s','Haldiram',
+    -- Transportation (11-16)
+    'Uber','Ola','Rapido','Petrol Pump - HP','Indian Oil','Metro Card',
+    -- Utilities (17-21)
+    'Airtel Fiber','Jio Fiber','Electricity Board','BESCOM','Gas Bill',
+    -- Shopping (22-26)
+    'Amazon','Flipkart','Myntra','Ajio','Decathlon',
+    -- Subscriptions (27-31)
+    'Netflix','Spotify Premium','Prime Video','Hotstar','YouTube Premium',
+    -- Healthcare (32-34)
+    'Apollo Pharmacy','MedPlus','PharmEasy',
+    -- Food & Beverage (35-38)
+    'Chai Point','Starbucks','Cafe Coffee Day','Third Wave Coffee',
+    -- Entertainment (39-41)
+    'PVR Cinemas','INOX','BookMyShow'
+  ];
+  cats := ARRAY[
+    cat_groc, cat_groc, cat_groc, cat_groc, cat_groc,
+    cat_dine, cat_dine, cat_dine, cat_dine, cat_dine, cat_dine,
+    cat_trans, cat_trans, cat_trans, cat_trans, cat_trans, cat_trans,
+    cat_util, cat_util, cat_util, cat_util, cat_util,
+    cat_shop, cat_shop, cat_shop, cat_shop, cat_shop,
+    cat_subs, cat_subs, cat_subs, cat_subs, cat_subs,
+    cat_health, cat_health, cat_health,
+    cat_food, cat_food, cat_food, cat_food,
+    cat_ent, cat_ent, cat_ent
+  ];
+  pays := ARRAY[
+    'UPI','Cash','UPI','Cash','UPI',
+    'UPI','UPI','UPI','UPI','Cash','Cash',
+    'UPI','UPI','UPI','UPI','UPI','UPI',
+    'Auto-debit','Auto-debit','UPI','UPI','Cash',
+    'Credit Card','Credit Card','Credit Card','Credit Card','Credit Card',
+    'Credit Card','Credit Card','Credit Card','Credit Card','Credit Card',
+    'UPI','UPI','UPI',
+    'Cash','UPI','UPI','UPI',
+    'UPI','UPI','UPI'
+  ];
+  accts := ARRAY[
+    acct_hdfc, acct_cash, acct_hdfc, acct_cash, acct_hdfc,
+    acct_hdfc, acct_hdfc, acct_hdfc, acct_hdfc, acct_cash, acct_cash,
+    acct_hdfc, acct_hdfc, acct_hdfc, acct_hdfc, acct_hdfc, acct_hdfc,
+    acct_hdfc, acct_hdfc, acct_hdfc, acct_hdfc, acct_cash,
+    acct_cc, acct_cc, acct_cc, acct_cc, acct_cc,
+    acct_cc, acct_cc, acct_cc, acct_cc, acct_cc,
+    acct_hdfc, acct_hdfc, acct_hdfc,
+    acct_cash, acct_hdfc, acct_hdfc, acct_hdfc,
+    acct_hdfc, acct_hdfc, acct_hdfc
+  ];
+  lo := ARRAY[
+    800, 500, 600, 500, 700,
+    150, 180, 250, 300, 200, 400,
+     80, 70, 50,1800,1700,100,
+    1499,999,1500,1400, 600,
+    500, 400, 600, 400, 800,
+    649,119, 299,299, 129,
+    150, 120, 150,
+     80,220,150,180,
+    250, 250, 200
+  ];
+  hi := ARRAY[
+    3800,3200,3500,2800,3200,
+    1100,1200,1400,1000,800,2200,
+     550, 500, 350,3500,3200,600,
+    1499,999,2600,2500,1200,
+    4500,3800,3500,3000,4500,
+     649,119, 299,299, 129,
+    1600,1400,1500,
+     220, 520, 380, 420,
+    1200,1100,1000
+  ];
 
-  -- ════════════════════ JULY – SEPTEMBER 2025 (bulk) ══════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    -- July
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          2890.00, 'INR', '2025-07-02', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00, 'INR', '2025-07-05', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              867.00, 'INR', '2025-07-08', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Croma',             12500.00, 'INR', '2025-07-12', (SELECT cid FROM _cat_map WHERE name='Equipment' LIMIT 1),       'Equipment',       'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                520.00, 'INR', '2025-07-15', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2350.00, 'INR', '2025-07-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2900.00, 'INR', '2025-07-24', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'DMart',              2780.00, 'INR', '2025-07-28', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'Cash', '{"source":"manual"}', 'manual'),
-    -- August
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              945.00, 'INR', '2025-08-01', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Reliance Fresh',     2150.00, 'INR', '2025-08-04', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'YouTube Premium',     129.00, 'INR', '2025-08-05', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Ola',                 389.00, 'INR', '2025-08-08', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Amazon',             5699.00, 'INR', '2025-08-12', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  1750.00, 'INR', '2025-08-18', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   3200.00, 'INR', '2025-08-22', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Medplus Pharmacy',    650.00, 'INR', '2025-08-25', (SELECT cid FROM _cat_map WHERE name='Healthcare' LIMIT 1),      'Healthcare',      'saved', 'Cash', '{"source":"manual"}', 'manual'),
-    -- September
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          3100.00, 'INR', '2025-09-01', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              534.00, 'INR', '2025-09-05', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Netflix',             649.00, 'INR', '2025-09-07', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Urban Company',      1200.00, 'INR', '2025-09-10', (SELECT cid FROM _cat_map WHERE name='Maintenance' LIMIT 1),     'Maintenance',     'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Rapido',              210.00, 'INR', '2025-09-12', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'DMart',              2450.00, 'INR', '2025-09-16', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'Cash', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2020.00, 'INR', '2025-09-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2750.00, 'INR', '2025-09-25', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual');
+  -- ─── 5. Daily expense loop (5..10 rows/day) ──────────────────────────────
+  d := start_d;
+  WHILE d <= today LOOP
+    txn_count := 5 + floor(random() * 6)::int;   -- 5..10
+    FOR i IN 1..txn_count LOOP
+      pick := 1 + floor(random() * array_length(vendors, 1))::int;
+      vendor_name := vendors[pick];
+      vendor_cat  := cats[pick];
+      vendor_pay  := pays[pick];
+      vendor_acct := accts[pick];
+      vendor_amt  := lo[pick] + floor(random() * (hi[pick] - lo[pick] + 1))::int;
 
-  -- ════════════════════ OCTOBER – DECEMBER 2025 ═══════════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              680.00, 'INR', '2025-10-02', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          2920.00, 'INR', '2025-10-06', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00, 'INR', '2025-10-08', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Flipkart',           3299.00, 'INR', '2025-10-15', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2200.00, 'INR', '2025-10-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   3050.00, 'INR', '2025-10-24', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    -- November (Diwali month — higher spend)
-    (gen_random_uuid(), uid, 'receipt',  'Amazon (Diwali Sale)',15999.00,'INR', '2025-11-02', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual","notes":"Diwali sale"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          4200.00, 'INR', '2025-11-05', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Haldiram',           1800.00, 'INR', '2025-11-08', (SELECT cid FROM _cat_map WHERE name='Food & Beverage' LIMIT 1), 'Food & Beverage', 'saved', 'Cash', '{"source":"manual","notes":"Diwali sweets"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                890.00, 'INR', '2025-11-12', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Netflix',             649.00, 'INR', '2025-11-15', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2400.00, 'INR', '2025-11-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   3400.00, 'INR', '2025-11-25', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    -- December
-    (gen_random_uuid(), uid, 'receipt',  'Reliance Fresh',     2780.00, 'INR', '2025-12-01', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'BookMyShow',          950.00, 'INR', '2025-12-05', (SELECT cid FROM _cat_map WHERE name='Entertainment' LIMIT 1),   'Entertainment',   'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              720.00, 'INR', '2025-12-08', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00, 'INR', '2025-12-10', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2950.00, 'INR', '2025-12-18', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  1900.00, 'INR', '2025-12-22', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual');
+      INSERT INTO public.transactions
+        (user_id, amount, currency, date, type, title, description,
+         category_id, category_source, payment_method, source_type,
+         effective_amount, status, account_id)
+      VALUES
+        (uid, vendor_amt, 'INR', d, 'expense', vendor_name, vendor_name,
+         vendor_cat, 'manual', vendor_pay, 'manual',
+         vendor_amt, 'confirmed', vendor_acct);
+    END LOOP;
+    d := d + 1;
+  END LOOP;
 
-  -- ════════════════════ JANUARY – MARCH 2026 ═════════════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          3340.00, 'INR', '2026-01-03', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              590.00, 'INR', '2026-01-06', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00, 'INR', '2026-01-08', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                456.00, 'INR', '2026-01-12', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2050.00, 'INR', '2026-01-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2850.00, 'INR', '2026-01-25', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    -- February
-    (gen_random_uuid(), uid, 'receipt',  'DMart',              2650.00, 'INR', '2026-02-02', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'Cash', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              485.00, 'INR', '2026-02-05', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Myntra',             3450.00, 'INR', '2026-02-08', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Netflix',             649.00, 'INR', '2026-02-10', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Apollo Pharmacy',    1100.00, 'INR', '2026-02-15', (SELECT cid FROM _cat_map WHERE name='Healthcare' LIMIT 1),      'Healthcare',      'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  1850.00, 'INR', '2026-02-20', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2700.00, 'INR', '2026-02-24', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    -- March
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          2980.00, 'INR', '2026-03-02', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              715.00, 'INR', '2026-03-06', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00, 'INR', '2026-03-08', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Coursera',           4200.00, 'INR', '2026-03-12', (SELECT cid FROM _cat_map WHERE name='Education' LIMIT 1),       'Education',       'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                378.00, 'INR', '2026-03-15', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Electricity Board',  2150.00, 'INR', '2026-03-22', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   3000.00, 'INR', '2026-03-26', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual');
+  -- ─── 6. Monthly salary (12 entries, last day of each past month) ─────────
+  FOR mo IN 0..11 LOOP
+    -- End of month for each of the last 12 months.
+    d := (date_trunc('month', today) - (mo * interval '1 month')
+          + interval '1 month' - interval '1 day')::date;
+    -- Small raise every quarter for a realistic ramp.
+    salary_amt := 85000 + (11 - mo) * 1000;
+    INSERT INTO public.transactions
+      (user_id, amount, currency, date, type, title, description,
+       source_type, effective_amount, status, account_id)
+    VALUES
+      (uid, salary_amt, 'INR', d, 'income',
+       'Salary - ' || to_char(d, 'Mon YYYY'),
+       'Monthly salary', 'manual', salary_amt, 'confirmed', acct_sbi);
+  END LOOP;
 
-  -- ════════════════════ APRIL 2026 (current month) ═══════════════
-  INSERT INTO public.documents (id, user_id, type, vendor_name, amount, currency, date, category_id, description, status, payment_method, extracted_data, category_source) VALUES
-    (gen_random_uuid(), uid, 'receipt',  'BigBasket',          3150.00, 'INR', '2026-04-01', (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       'Groceries',       'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Zomato',              645.00, 'INR', '2026-04-03', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Airtel Fiber',       1499.00, 'INR', '2026-04-05', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       'Utilities',       'saved', 'Auto-debit', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Uber',                310.00, 'INR', '2026-04-07', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Amazon',             2199.00, 'INR', '2026-04-09', (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        'Shopping',        'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'invoice',  'Netflix',             649.00, 'INR', '2026-04-10', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   'Subscriptions',   'saved', 'Credit Card', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Swiggy',              478.00, 'INR', '2026-04-12', (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          'Dining',          'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Petrol Pump - HP',   2900.00, 'INR', '2026-04-14', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  'Transportation',  'saved', 'UPI', '{"source":"manual"}', 'manual'),
-    (gen_random_uuid(), uid, 'receipt',  'Chai Point',          220.00, 'INR', '2026-04-16', (SELECT cid FROM _cat_map WHERE name='Food & Beverage' LIMIT 1), 'Food & Beverage', 'saved', 'Cash', '{"source":"manual"}', 'manual');
+  -- ─── 7. Mirror every seeded expense into public.documents ────────────────
+  -- Pre-Goat UI reads from documents via SupabaseService.fetchDocuments();
+  -- Goat compute reads from transactions. Mirror keeps both surfaces alive.
+  INSERT INTO public.documents
+    (user_id, type, vendor_name, amount, currency, tax_amount, date,
+     category_id, description, payment_method, status, extracted_data,
+     category_source)
+  SELECT
+    t.user_id,
+    'receipt',
+    t.title,
+    t.amount,
+    t.currency,
+    0,
+    t.date,
+    t.category_id,
+    t.description,
+    t.payment_method,
+    'saved',
+    jsonb_build_object(
+      'seeded_by',             'seed_manng_data.sql',
+      'source_transaction_id', t.id,
+      'synthetic',             true
+    ),
+    'manual'
+  FROM public.transactions t
+  WHERE t.user_id = uid
+    AND t.type   = 'expense';
 
-  -- ─── Step 5: Create transactions from documents ─────────────────
-  INSERT INTO public.transactions (id, user_id, amount, currency, date, type, title, description, category_id, category_source, payment_method, source_type, source_document_id, effective_amount, status, account_id)
-    SELECT gen_random_uuid(), d.user_id, d.amount, d.currency, d.date, 'expense', d.vendor_name, d.description, d.category_id, 'manual', d.payment_method, 'manual', d.id, d.amount, 'confirmed',
-      CASE
-        WHEN d.payment_method = 'Credit Card' THEN 'a0000001-0000-0000-0000-000000000003'::uuid
-        WHEN d.payment_method = 'Cash'        THEN 'a0000001-0000-0000-0000-000000000004'::uuid
-        ELSE 'a0000001-0000-0000-0000-000000000001'::uuid
-      END
-    FROM public.documents d WHERE d.user_id = uid;
+  -- ─── 8. Budgets (active for current month) ───────────────────────────────
+  INSERT INTO public.budgets
+    (user_id, name, category_id, amount, period, currency, is_active, start_date)
+  VALUES
+    (uid, 'Groceries',      cat_groc,   12000.00, 'monthly', 'INR', true, date_trunc('month', today)::date),
+    (uid, 'Dining',          cat_dine,   6000.00, 'monthly', 'INR', true, date_trunc('month', today)::date),
+    (uid, 'Transportation',  cat_trans,  8000.00, 'monthly', 'INR', true, date_trunc('month', today)::date),
+    (uid, 'Utilities',       cat_util,   5000.00, 'monthly', 'INR', true, date_trunc('month', today)::date),
+    (uid, 'Shopping',        cat_shop,  10000.00, 'monthly', 'INR', true, date_trunc('month', today)::date),
+    (uid, 'Subscriptions',   cat_subs,   2000.00, 'monthly', 'INR', true, date_trunc('month', today)::date),
+    (uid, 'Entertainment',   cat_ent,    2500.00, 'monthly', 'INR', true, date_trunc('month', today)::date);
 
-  -- ─── Step 6: Income transactions (salary) ───────────────────────
-  INSERT INTO public.transactions (user_id, amount, currency, date, type, title, description, source_type, effective_amount, status, account_id) VALUES
-    (uid, 85000.00, 'INR', '2025-04-30', 'income', 'Salary - April',     'Monthly salary', 'manual', 85000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 85000.00, 'INR', '2025-05-31', 'income', 'Salary - May',       'Monthly salary', 'manual', 85000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 85000.00, 'INR', '2025-06-30', 'income', 'Salary - June',      'Monthly salary', 'manual', 85000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 85000.00, 'INR', '2025-07-31', 'income', 'Salary - July',      'Monthly salary', 'manual', 85000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 90000.00, 'INR', '2025-08-31', 'income', 'Salary - August',    'Monthly salary (raise)', 'manual', 90000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 90000.00, 'INR', '2025-09-30', 'income', 'Salary - September', 'Monthly salary', 'manual', 90000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 90000.00, 'INR', '2025-10-31', 'income', 'Salary - October',   'Monthly salary', 'manual', 90000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 90000.00, 'INR', '2025-11-30', 'income', 'Salary - November',  'Monthly salary', 'manual', 90000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 90000.00, 'INR', '2025-12-31', 'income', 'Salary - December',  'Monthly salary', 'manual', 90000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 95000.00, 'INR', '2026-01-31', 'income', 'Salary - January',   'Monthly salary (annual raise)', 'manual', 95000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 95000.00, 'INR', '2026-02-28', 'income', 'Salary - February',  'Monthly salary', 'manual', 95000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002'),
-    (uid, 95000.00, 'INR', '2026-03-31', 'income', 'Salary - March',     'Monthly salary', 'manual', 95000.00, 'confirmed', 'a0000001-0000-0000-0000-000000000002');
+  -- ─── 9. Recurring series (drifts + bills) ────────────────────────────────
+  INSERT INTO public.recurring_series
+    (user_id, title, amount, currency, category_id, cadence,
+     anchor_date, next_due, detection_source, is_active)
+  VALUES
+    (uid, 'Netflix',         649.00, 'INR', cat_subs, 'monthly', today - 335, today +  5, 'manual', true),
+    (uid, 'Spotify Premium', 119.00, 'INR', cat_subs, 'monthly', today - 330, today + 10, 'manual', true),
+    (uid, 'Airtel Fiber',   1499.00, 'INR', cat_util, 'monthly', today - 333, today +  7, 'manual', true),
+    (uid, 'Electricity',    2000.00, 'INR', cat_util, 'monthly', today - 325, today + 15, 'manual', true),
+    (uid, 'YouTube Premium', 129.00, 'INR', cat_subs, 'monthly', today - 240, today + 25, 'manual', true);
 
-  -- ─── Step 7: Lend & Borrow entries ──────────────────────────────
-  INSERT INTO public.lend_borrow_entries (user_id, counterparty_name, amount, type, status, due_date, notes) VALUES
-    (uid, 'Rahul',   5000.00, 'lent',     'pending',  '2025-06-15', 'Trip expenses'),
-    (uid, 'Priya',   3000.00, 'lent',     'settled',  '2025-07-01', 'Dinner share'),
-    (uid, 'Vikram',  8000.00, 'borrowed', 'pending',  '2025-09-01', 'Emergency cash'),
-    (uid, 'Sneha',   2000.00, 'lent',     'pending',  '2025-10-15', 'Movie tickets + food'),
-    (uid, 'Arjun',  12000.00, 'borrowed', 'settled',  '2025-12-01', 'Laptop repair'),
-    (uid, 'Meera',   4500.00, 'lent',     'pending',  '2026-02-28', 'Shopping split'),
-    (uid, 'Karthik', 6000.00, 'borrowed', 'pending',  '2026-04-30', 'Rent gap cover');
+  -- ─── 10. Lend / Borrow ledger ────────────────────────────────────────────
+  INSERT INTO public.lend_borrow_entries
+    (user_id, counterparty_name, amount, type, status, due_date, notes)
+  VALUES
+    (uid, 'Rahul',   5000.00, 'lent',     'pending',  today + 12, 'Weekend trip split'),
+    (uid, 'Priya',   3000.00, 'lent',     'settled',  today - 90, 'Dinner share (closed)'),
+    (uid, 'Vikram',  8000.00, 'borrowed', 'pending',  today +  8, 'Rent gap cover'),
+    (uid, 'Sneha',   2000.00, 'lent',     'pending',  today + 45, 'Movie + dinner'),
+    (uid, 'Arjun',  12000.00, 'borrowed', 'settled',  today -160, 'Laptop repair (closed)'),
+    (uid, 'Meera',   4500.00, 'lent',     'pending',  today + 60, 'Shopping split'),
+    (uid, 'Karthik', 6000.00, 'borrowed', 'pending',  today + 30, 'Emergency cash');
 
-  -- ─── Step 8: Budgets (current month active) ────────────────────
-  INSERT INTO public.budgets (user_id, name, category_id, amount, period, currency, is_active, start_date) VALUES
-    (uid, 'Groceries',      (SELECT cid FROM _cat_map WHERE name='Groceries' LIMIT 1),       8000.00,  'monthly', 'INR', true, '2026-04-01'),
-    (uid, 'Dining',         (SELECT cid FROM _cat_map WHERE name='Dining' LIMIT 1),          3000.00,  'monthly', 'INR', true, '2026-04-01'),
-    (uid, 'Transportation', (SELECT cid FROM _cat_map WHERE name='Transportation' LIMIT 1),  5000.00,  'monthly', 'INR', true, '2026-04-01'),
-    (uid, 'Utilities',      (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),       5000.00,  'monthly', 'INR', true, '2026-04-01'),
-    (uid, 'Shopping',       (SELECT cid FROM _cat_map WHERE name='Shopping' LIMIT 1),        6000.00,  'monthly', 'INR', true, '2026-04-01'),
-    (uid, 'Subscriptions',  (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1),   3000.00,  'monthly', 'INR', true, '2026-04-01'),
-    (uid, 'Entertainment',  (SELECT cid FROM _cat_map WHERE name='Entertainment' LIMIT 1),   2000.00,  'monthly', 'INR', true, '2026-04-01');
+  -- ─── 11. Goat user inputs / goals / obligations (readiness L3) ───────────
+  INSERT INTO public.goat_user_inputs (
+    user_id, monthly_income, income_currency, pay_frequency, salary_day,
+    emergency_fund_target_months, liquidity_floor, household_size, dependents,
+    risk_tolerance, planning_horizon_months, tone_preference, notes
+  ) VALUES (
+    uid, 90000.00, 'INR', 'monthly', 1,
+    6.0, 150000.00, 2, 1,
+    'balanced', 12, 'direct',
+    jsonb_build_object(
+      'seeded_by', 'seed_manng_data.sql',
+      'seeded_on', to_char(now(), 'YYYY-MM-DD'),
+      'readiness', 'L3'
+    )
+  );
 
-  -- ─── Step 9: Recurring series ───────────────────────────────────
-  INSERT INTO public.recurring_series (user_id, title, amount, currency, category_id, cadence, anchor_date, next_due, detection_source, is_active) VALUES
-    (uid, 'Netflix',        649.00,  'INR', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1), 'monthly', '2025-04-15', '2026-05-15', 'manual', true),
-    (uid, 'Airtel Fiber',  1499.00,  'INR', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),     'monthly', '2025-04-07', '2026-05-07', 'manual', true),
-    (uid, 'Spotify',        119.00,  'INR', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1), 'monthly', '2025-05-07', '2026-05-07', 'manual', true),
-    (uid, 'YouTube Premium', 129.00, 'INR', (SELECT cid FROM _cat_map WHERE name='Subscriptions' LIMIT 1), 'monthly', '2025-08-05', '2026-05-05', 'manual', true),
-    (uid, 'Electricity',   2000.00,  'INR', (SELECT cid FROM _cat_map WHERE name='Utilities' LIMIT 1),     'monthly', '2025-04-22', '2026-05-22', 'manual', true);
+  INSERT INTO public.goat_goals
+    (user_id, goal_type, title, target_amount, current_amount,
+     target_date, priority, status, metadata)
+  VALUES
+    (uid, 'emergency_fund', 'Emergency Fund (6 months)', 540000.00, 125000.00, today + 180, 1, 'active', '{"source":"seed"}'::jsonb),
+    (uid, 'savings',        'Vacation — Goa Dec',        75000.00,  22000.00, today + 240, 3, 'active', '{"source":"seed"}'::jsonb),
+    (uid, 'debt_payoff',    'Clear credit-card revolve', 20000.00,   5000.00, today +  90, 2, 'active', '{"source":"seed"}'::jsonb);
 
-  -- ─── Step 10: A few activity events ─────────────────────────────
-  INSERT INTO public.activity_events (user_id, event_type, actor_user_id, summary, visibility) VALUES
-    (uid, 'document_scanned',     uid, 'Scanned Swiggy receipt for ₹489',          'private'),
-    (uid, 'budget_created',       uid, 'Created monthly Groceries budget (₹8,000)', 'private'),
-    (uid, 'budget_exceeded',      uid, 'Shopping budget exceeded by ₹199',           'private'),
-    (uid, 'lend_created',         uid, 'Lent ₹5,000 to Rahul',                      'private'),
-    (uid, 'borrow_created',       uid, 'Borrowed ₹8,000 from Vikram',               'private'),
-    (uid, 'recurring_detected',   uid, 'Detected Netflix as monthly recurring',      'private'),
-    (uid, 'statement_imported',   uid, 'Imported HDFC statement (15 transactions)',   'private'),
-    (uid, 'transaction_created',  uid, 'Added ₹95,000 salary for March',             'private');
+  INSERT INTO public.goat_obligations
+    (user_id, obligation_type, lender_name, current_outstanding,
+     monthly_due, due_day, interest_rate, cadence, status, metadata)
+  VALUES
+    (uid, 'emi',             'HDFC Personal Loan',  280000.00,  9500.00, extract(day from (today + 2))::int, 11.25, 'monthly', 'active', '{"source":"seed"}'::jsonb),
+    (uid, 'rent',            'Landlord',                 NULL, 24000.00,  5, NULL,  'monthly', 'active', '{"source":"seed"}'::jsonb),
+    (uid, 'credit_card_min', 'ICICI Amazon Pay',     18400.00,  1840.00, 12, 38.00, 'monthly', 'active', '{"source":"seed"}'::jsonb);
 
-  RAISE NOTICE 'Seed data complete for Manng (%). Documents, transactions, budgets, lend/borrow, recurring, and activity events inserted.', uid;
+  -- ─── 12. Summary ─────────────────────────────────────────────────────────
+  RAISE NOTICE '── Seed complete ──';
+  RAISE NOTICE 'accounts          : %', (SELECT count(*) FROM public.accounts          WHERE user_id = uid);
+  RAISE NOTICE 'transactions      : %', (SELECT count(*) FROM public.transactions      WHERE user_id = uid);
+  RAISE NOTICE '  expenses total  : %', (SELECT count(*) FROM public.transactions      WHERE user_id = uid AND type='expense');
+  RAISE NOTICE '  expenses 30d    : %', (SELECT count(*) FROM public.transactions      WHERE user_id = uid AND type='expense' AND date >= today - 30);
+  RAISE NOTICE '  income (salary) : %', (SELECT count(*) FROM public.transactions      WHERE user_id = uid AND type='income');
+  RAISE NOTICE 'documents         : %', (SELECT count(*) FROM public.documents         WHERE user_id = uid);
+  RAISE NOTICE 'budgets           : %', (SELECT count(*) FROM public.budgets           WHERE user_id = uid);
+  RAISE NOTICE 'recurring_series  : %', (SELECT count(*) FROM public.recurring_series  WHERE user_id = uid);
+  RAISE NOTICE 'lend_borrow       : %', (SELECT count(*) FROM public.lend_borrow_entries WHERE user_id = uid);
+  RAISE NOTICE 'goat_user_inputs  : %', (SELECT count(*) FROM public.goat_user_inputs  WHERE user_id = uid);
+  RAISE NOTICE 'goat_goals        : %', (SELECT count(*) FROM public.goat_goals        WHERE user_id = uid);
+  RAISE NOTICE 'goat_obligations  : %', (SELECT count(*) FROM public.goat_obligations  WHERE user_id = uid);
+  RAISE NOTICE 'total expense sum : ₹%', (SELECT to_char(COALESCE(sum(amount),0),'FM999,999,999.00') FROM public.transactions WHERE user_id = uid AND type='expense');
+  RAISE NOTICE '── Refresh the dashboard: 1W / 1M / 3M / 6M / 1Y charts    ──';
+  RAISE NOTICE '── should all light up. Then open Goat Mode → Run analysis. ──';
 END $$;
