@@ -34,7 +34,19 @@
 -- ║  ---                                                                      ║
 -- ║  Paste into Supabase SQL Editor OR run with:                              ║
 -- ║    psql "$DATABASE_URL" -f scripts/goat/seed_user_3d8238ac.sql            ║
--- ║  Idempotent — safe to re-run.                                             ║
+-- ║  Idempotent — safe to re-run for the target UUID.                         ║
+-- ║                                                                           ║
+-- ║  !! DESTRUCTIVE FOR THE TARGET USER ONLY !!                               ║
+-- ║  --------------------------------------                                   ║
+-- ║  This script wipes and reseeds rows belonging to the target uid in:       ║
+-- ║    profiles(flags)    transactions        documents                       ║
+-- ║    budgets            recurring_series    lend_borrow_entries             ║
+-- ║    accounts(known)    goat_user_inputs    goat_goals                      ║
+-- ║    goat_obligations   goat_mode_snapshots goat_mode_jobs                  ║
+-- ║    goat_mode_recommendations  goat_mode_job_events                        ║
+-- ║                                                                           ║
+-- ║  Do NOT run against a real user account whose history you want to keep.   ║
+-- ║  Other users (different user_id) are unaffected.                          ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
 
 DO $$
@@ -214,6 +226,38 @@ BEGIN
     (uid, 90000.00, 'INR', today - 62, 'income', 'Salary', 'Monthly salary', 'manual', 90000.00, 'confirmed', acct_sbi),
     (uid, 90000.00, 'INR', today - 31, 'income', 'Salary', 'Monthly salary', 'manual', 90000.00, 'confirmed', acct_sbi);
 
+  -- ─── 6b. Documents (MIRROR every seeded expense tx) ──────────────────────
+  -- The pre-Goat Billy UI (dashboard spend cards, analytics totals, 7-day
+  -- / 1W / 1M / 3M trend charts, category breakdown, savings tips) reads
+  -- from public.documents via SupabaseService.fetchDocuments(). The Goat
+  -- compute layer reads from public.transactions. Without this step the
+  -- seed wipes real receipts and never refills them, so every pre-Goat
+  -- widget renders zero. This INSERT mirrors each seeded *expense* into
+  -- documents so both surfaces have data to show.
+  INSERT INTO public.documents
+    (user_id, type, vendor_name, amount, currency, tax_amount, date,
+     category_id, description, payment_method, status, extracted_data)
+  SELECT
+    t.user_id,
+    'receipt',
+    t.title,
+    t.amount,
+    t.currency,
+    0,
+    t.date,
+    t.category_id,
+    t.description,
+    t.payment_method,
+    'saved',
+    jsonb_build_object(
+      'seeded_by',             'seed_user_3d8238ac.sql',
+      'source_transaction_id', t.id,
+      'synthetic',             true
+    )
+  FROM public.transactions t
+  WHERE t.user_id = uid
+    AND t.type   = 'expense';
+
   -- ─── 7. Budgets (Dining is intentionally too small — triggers rec) ───────
   INSERT INTO public.budgets
     (user_id, name, category_id, amount, period, currency, is_active, start_date)
@@ -288,11 +332,13 @@ BEGIN
   RAISE NOTICE '  expenses 30d    : %', (SELECT count(*) FROM public.transactions
                                           WHERE user_id = uid AND type = 'expense'
                                             AND date >= today - 30);
+  RAISE NOTICE 'documents         : %', (SELECT count(*) FROM public.documents         WHERE user_id = uid);
   RAISE NOTICE 'budgets           : %', (SELECT count(*) FROM public.budgets           WHERE user_id = uid);
   RAISE NOTICE 'recurring_series  : %', (SELECT count(*) FROM public.recurring_series  WHERE user_id = uid);
   RAISE NOTICE 'lend_borrow       : %', (SELECT count(*) FROM public.lend_borrow_entries WHERE user_id = uid);
   RAISE NOTICE 'goat_user_inputs  : %', (SELECT count(*) FROM public.goat_user_inputs  WHERE user_id = uid);
   RAISE NOTICE 'goat_goals        : %', (SELECT count(*) FROM public.goat_goals        WHERE user_id = uid);
   RAISE NOTICE 'goat_obligations  : %', (SELECT count(*) FROM public.goat_obligations  WHERE user_id = uid);
-  RAISE NOTICE '── Seed complete. Open Goat Mode for this user to trigger a run. ──';
+  RAISE NOTICE '── Seed complete. Open the dashboard to confirm pre-Goat ──';
+  RAISE NOTICE '── math renders, then open Goat Mode to trigger a run.   ──';
 END $$;
