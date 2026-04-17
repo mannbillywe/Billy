@@ -90,6 +90,32 @@ class _LoginScreenState extends State<LoginScreen> {
         },
       );
       if (!mounted) return;
+
+      // ─── Email already registered? ─────────────────────────────────
+      // Supabase's anti-enumeration guard: when the email is already taken
+      // it returns a synthetic `user` with an empty `identities` array
+      // (and no session). If we do not catch this here, the caller thinks
+      // the account was created and (worse) may end up signed back into
+      // the *existing* account on a subsequent refresh — which is how a
+      // "brand-new user" ends up seeing somebody else's lend/borrow data.
+      //
+      // Ref: https://supabase.com/docs/guides/auth/auth-identity-linking
+      final u = response.user;
+      final identitiesEmpty = (u?.identities?.isEmpty ?? false);
+      if (u != null && identitiesEmpty && response.session == null) {
+        // Defensive: force-clear any residual client session so the caller
+        // cannot remain authenticated as a previously-active account.
+        try {
+          await Supabase.instance.client.auth.signOut();
+        } catch (_) {}
+        _showMsg(
+          'This email is already registered. Sign in instead, or tap '
+          '"Forgot password" to reset it.',
+          error: true,
+        );
+        return;
+      }
+
       if (response.session != null) {
         // Signed in — [BillyApp] switches to [LayoutShell] via [authStateProvider].
         setState(() {
@@ -97,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _message = null;
           _messageIsError = false;
         });
-      } else if (response.user != null) {
+      } else if (u != null) {
         _showMsg('Account created! Check your email to verify, then sign in.');
       } else {
         _showMsg('Account could not be created.', error: true);
