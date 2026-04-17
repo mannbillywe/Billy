@@ -16,7 +16,7 @@ returns boolean
 language sql
 security definer
 set search_path = public
-stableso 
+stable
 as $$
   select exists (
     select 1 from public.app_api_keys
@@ -64,34 +64,37 @@ create policy "lb_update" on public.lend_borrow_entries for update
   with check (auth.uid() = user_id or auth.uid() = counterparty_user_id);
 
 -- ─── splits / connected_apps / export_history: FOR ALL → explicit + WITH CHECK ─────
-drop policy if exists "Users can manage own splits" on public.splits;
-drop policy if exists "splits_select_own" on public.splits;
-drop policy if exists "splits_insert_own" on public.splits;
-drop policy if exists "splits_update_own" on public.splits;
-drop policy if exists "splits_delete_own" on public.splits;
-create policy "splits_select_own" on public.splits for select to authenticated
-  using (auth.uid() = user_id);
-create policy "splits_insert_own" on public.splits for insert to authenticated
-  with check (auth.uid() = user_id);
-create policy "splits_update_own" on public.splits for update to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "splits_delete_own" on public.splits for delete to authenticated
-  using (auth.uid() = user_id);
+-- `splits` and `split_participants` were dropped by
+-- 20260420120009_drop_dead_splits.sql (consolidated-ledger rewrite), so on a
+-- fresh / nuked database those relations no longer exist. Guard every policy
+-- rewrite with to_regclass() so this migration is replayable on both legacy
+-- and post-consolidation schemas.
+do $$
+begin
+  if to_regclass('public.splits') is not null then
+    execute 'drop policy if exists "Users can manage own splits" on public.splits';
+    execute 'drop policy if exists "splits_select_own" on public.splits';
+    execute 'drop policy if exists "splits_insert_own" on public.splits';
+    execute 'drop policy if exists "splits_update_own" on public.splits';
+    execute 'drop policy if exists "splits_delete_own" on public.splits';
+    execute 'create policy "splits_select_own" on public.splits for select to authenticated using (auth.uid() = user_id)';
+    execute 'create policy "splits_insert_own" on public.splits for insert to authenticated with check (auth.uid() = user_id)';
+    execute 'create policy "splits_update_own" on public.splits for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)';
+    execute 'create policy "splits_delete_own" on public.splits for delete to authenticated using (auth.uid() = user_id)';
+  end if;
 
-drop policy if exists "Users can manage own split participants" on public.split_participants;
-drop policy if exists "split_participants_select_own" on public.split_participants;
-drop policy if exists "split_participants_insert_own" on public.split_participants;
-drop policy if exists "split_participants_update_own" on public.split_participants;
-drop policy if exists "split_participants_delete_own" on public.split_participants;
-create policy "split_participants_select_own" on public.split_participants for select to authenticated
-  using (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()));
-create policy "split_participants_insert_own" on public.split_participants for insert to authenticated
-  with check (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()));
-create policy "split_participants_update_own" on public.split_participants for update to authenticated
-  using (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()))
-  with check (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()));
-create policy "split_participants_delete_own" on public.split_participants for delete to authenticated
-  using (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()));
+  if to_regclass('public.split_participants') is not null then
+    execute 'drop policy if exists "Users can manage own split participants" on public.split_participants';
+    execute 'drop policy if exists "split_participants_select_own" on public.split_participants';
+    execute 'drop policy if exists "split_participants_insert_own" on public.split_participants';
+    execute 'drop policy if exists "split_participants_update_own" on public.split_participants';
+    execute 'drop policy if exists "split_participants_delete_own" on public.split_participants';
+    execute 'create policy "split_participants_select_own" on public.split_participants for select to authenticated using (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()))';
+    execute 'create policy "split_participants_insert_own" on public.split_participants for insert to authenticated with check (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()))';
+    execute 'create policy "split_participants_update_own" on public.split_participants for update to authenticated using (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid())) with check (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()))';
+    execute 'create policy "split_participants_delete_own" on public.split_participants for delete to authenticated using (exists (select 1 from public.splits s where s.id = split_id and s.user_id = auth.uid()))';
+  end if;
+end $$;
 
 drop policy if exists "Users can manage own connected apps" on public.connected_apps;
 drop policy if exists "connected_apps_select_own" on public.connected_apps;
