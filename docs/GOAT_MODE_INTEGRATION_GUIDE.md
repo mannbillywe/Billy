@@ -32,38 +32,35 @@ than `failed`.
 ## 2. High-level architecture
 
 ```
-Flutter client
+Client (app / server / script)
       |
-      |  1. POST /goat-mode-trigger  (user JWT)
-      v
-Supabase Edge Function  (goat-mode-trigger)
-      |
-      |  - verifies JWT
-      |  - derives user_id from session (never from body)
-      |  - checks profiles.goat_mode == true
-      |  - forwards to backend with shared secret (OIDC ID token on GCP)
+      |  POST /goat-mode/run
+      |  X-Goat-Backend-Secret: <shared>
       v
 Cloud Run  /  Local FastAPI   (backend/app/goat)
       |
-      |  2. Insert goat_mode_jobs row (status=queued)
-      |  3. load_bundle()      -> GoatDataBundle
-      |  4. compute_scope()    -> deterministic metrics
-      |  5. soft-fail layers:  forecast / anomaly / risk
-      |  6. recommendations.generate()
-      |  7. soft-fail AI:      Gemini-phrased envelope + strict validator
-      |  8. upsert snapshot + insert recs
-      |  9. update job status + job_events
+      |  1. Insert goat_mode_jobs row (status=queued)
+      |  2. load_bundle()      -> GoatDataBundle
+      |  3. compute_scope()    -> deterministic metrics
+      |  4. soft-fail layers:  forecast / anomaly / risk
+      |  5. recommendations.generate()
+      |  6. soft-fail AI:      Gemini-phrased envelope + strict validator
+      |  7. upsert snapshot + insert recs
+      |  8. update job status + job_events
       v
 Supabase DB   (goat_mode_*, read back via RLS)
       |
       v
-Flutter client polls / reads the snapshot and recommendations
+Client polls / reads the snapshot and recommendations
 ```
 
-Two boundaries you'll care about:
+One boundary you'll care about:
 
-- `supabase/functions/goat-mode-trigger/index.ts` - Deno edge function
 - `backend/app/goat/` - FastAPI service (can also run as CLI)
+
+The caller is responsible for authenticating the end user and supplying a
+trusted `user_id` in the `/goat-mode/run` body. See section 7 for the
+security contract the backend expects.
 
 ---
 
@@ -512,27 +509,35 @@ coverage summary so the UI can render an "ask only what's missing" form.
 
 ---
 
-## 7. Edge function (`goat-mode-trigger`)
+## 7. Caller responsibilities (auth + entitlement)
 
-Responsibilities, in order:
+The backend's `/goat-mode/run` is protected by `X-Goat-Backend-Secret` only.
+It trusts the caller to have done these three things:
 
-1. CORS preflight handling, 405 on non-POST, 413 on body > 64 KB.
-2. Reject if no `Authorization` header (401 `UNAUTHORIZED`).
-3. Build a Supabase client with the caller's JWT, call `auth.getUser()`.
-4. Parse body, validate `scope` (allow-list of 7 values) and ISO dates.
-5. **Security invariant**: any `user_id` in the body is **ignored**; the
-   user id always comes from `auth.getUser()`. A mismatch is logged.
-6. Entitlement gate: reject with 403 `GOAT_MODE_NOT_ENABLED` if
-   `profiles.goat_mode !== true`. Uses the **user-scoped** client so RLS applies.
-7. `dispatchGoatBackend(...)` (in `_shared/backend_dispatch.ts`) attaches the
-   shared secret. On Cloud Run it additionally mints a GCP-signed OIDC ID
-   token via `_shared/gcp_id_token.ts`.
-8. Return a trimmed client-safe response: `{ ok, user_id, scope, dry_run,
-   job_id, snapshot_id, readiness_level, snapshot_status, data_fingerprint,
-   recommendation_count, layer_errors, ai: { mode, model, ai_validated,
-   fallback_used } }`.
+1. **Authenticate the end user** (JWT verification, session check, whatever
+   your stack uses). Do NOT expose `/goat-mode/run` directly to browsers.
 
-A Safari-friendly Vercel proxy is available at `web/api/goat-mode-trigger.js`.
+2. **Pass the authenticated user id** in the request body as `user_id`. Never
+   accept this value from the client - derive it from the verified session.
+
+3. **Check entitlement** before forwarding. Billy uses a boolean
+   `profiles.goat_mode` column and rejects the call with `403 GOAT_MODE_NOT_ENABLED`
+   when it is false. Your stack can use any equivalent flag.
+
+Typical deployments:
+
+- **FastAPI gateway / Node backend**: verify the user's session, look up the
+  entitlement flag under that user's RLS context, then `POST` to
+  `/goat-mode/run` with the shared secret.
+- **Scheduled worker / cron**: pick the user_id server-side from a trusted
+  source (a queue, a cron table), no user auth needed.
+- **Serverless function proxy** (Cloudflare Worker, Vercel edge, AWS Lambda,
+  ...): same pattern - verify the user session, check the entitlement flag,
+  forward with shared secret. If the backend runs on GCP Cloud Run, your
+  proxy will additionally need to mint a service-account-signed OIDC ID token.
+
+In all cases the response from the backend is safe to forward to the client
+after optionally trimming the AI envelope to a subset of fields.
 
 ---
 
@@ -544,22 +549,13 @@ A Safari-friendly Vercel proxy is available at `web/api/goat-mode-trigger.js`.
 |---|---|---|
 | `SUPABASE_URL` | Project URL | **required** |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key (bypasses RLS for writes) | **required** |
-| `GOAT_BACKEND_SHARED_SECRET` | Must match the edge function's secret | **required** |
+| `GOAT_BACKEND_SHARED_SECRET` | Secret the caller must pass via `X-Goat-Backend-Secret` | **required** |
 | `GOAT_ALLOW_DEV_ENDPOINTS` | `1` to expose `/run-for-user` | `0` |
 | `GOAT_TEST_USER_ID` | Fallback user for dev endpoint | unset |
 | `GOAT_AI_ENABLED` | `1` to call Gemini at all | `0` |
 | `GOAT_AI_FAKE_MODE` | `1` to short-circuit with a canned fake envelope | `0` |
 | `GOAT_AI_MODEL` | Override the default Gemini model | `gemini-3-flash-preview` |
 | `GEMINI_API_KEY` | Required for `real` mode | unset |
-
-### Edge function
-
-| Var | Purpose |
-|---|---|
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Build the user-scoped client |
-| `GOAT_BACKEND_URL` | Cloud Run / local FastAPI base URL |
-| `GOAT_BACKEND_SHARED_SECRET` | Matches backend |
-| `GCP_SERVICE_ACCOUNT_JSON` | For OIDC on Cloud Run (optional on local) |
 
 ### Version map (`versions.py`)
 
@@ -612,24 +608,27 @@ Billy-isms to watch are the assumed column names on `transactions`, `accounts`,
    - If your shape differs, translate there rather than in the deterministic
      module - it keeps the compute code intact.
 
-4. **Deploy the edge function.**
-   - Copy `supabase/functions/goat-mode-trigger/` and `supabase/functions/_shared/`
-     from the backup branch.
-   - `supabase functions deploy goat-mode-trigger`.
-   - Set the secrets: `supabase secrets set GOAT_BACKEND_URL=... GOAT_BACKEND_SHARED_SECRET=...`.
+4. **Add an auth gateway in front of the backend.**
+   - The backend trusts `user_id` in the request body. Put a thin layer
+     between your end users and `/goat-mode/run` that verifies session +
+     entitlement and supplies the trusted `user_id`. See section 7.
+   - Any server-side hop that can hold the shared secret works - API route,
+     backend service, serverless function, scheduled worker.
 
 5. **Wire entitlement.**
    - Add a `goat_mode boolean not null default false` column to your
      `profiles` table (see `20260422120000_profiles_goat_mode_flag.sql`).
    - Flip it to `true` for beta users via a privileged backend.
+   - Check the flag in your gateway before forwarding to `/goat-mode/run`.
 
 6. **Expose the client.**
-   - The Flutter client is at `lib/features/goat/services/goat_mode_service.dart`
-     (edge-function call) and `lib/features/goat/providers/goat_mode_providers.dart`
-     (polling loop + latest-snapshot stream).
-   - For a non-Flutter app: POST the JWT to the edge function, parse the
-     abridged response, then query `goat_mode_snapshots` and
-     `goat_mode_recommendations` directly under RLS.
+   - Client UI reads `goat_mode_snapshots` and `goat_mode_recommendations`
+     directly under RLS (users only see their own rows). No server round-trip
+     needed for reads.
+   - Trigger a compute by POSTing to your gateway, which forwards to
+     `/goat-mode/run` with the shared secret. Poll `goat_mode_jobs.status`
+     (or just re-read the latest snapshot by `(user_id, scope)`) until
+     `succeeded` or `partial`.
 
 7. **Turn AI on when ready.**
    - Start with `GOAT_AI_ENABLED=0` (everything works; `ai.mode = "disabled"`).
@@ -710,18 +709,11 @@ backend/app/goat/
     validator.py         6 grounding checks
     fallbacks.py         deterministic phrasing
 
-supabase/functions/
-  goat-mode-trigger/index.ts    edge function
-  _shared/backend_dispatch.ts   shared-secret + GCP OIDC dispatch
-  _shared/cors.ts
-  _shared/gcp_id_token.ts
-
 scripts/
   goat_user_inputs_with_seed.sql   user-input tables + seed data
   cleanup_goat_mode_v1.sql         drop everything if rolling back
   goat/
     deploy_goat_backend_cloudrun.ps1
-    deploy_goat_mode_trigger.ps1
     run-local.ps1
     seed_goat_rich.sql / medium / sparse
 
