@@ -61,3 +61,12 @@ Thumbs.db
 backend/app/wet-run-ai.json
 backend/app/*.wet-run.json
 
+# Local run / tunnel logs (never commit)
+backend/local-run.log
+backend/local-run.err.log
+backend/cf-tunnel.log
+backend/cf-tunnel.err.log
+backend/cf-tunnel.url
+build-web.log
+vercel-deploy.log
+
