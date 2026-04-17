@@ -18,6 +18,8 @@ GoogleService-Info.plist
 # Python (backend/)
 backend/.venv/
 backend/venv/
+backend/app/.venv/
+backend/app/venv/
 backend/__pycache__/
 *.py[cod]
 
@@ -47,3 +49,15 @@ scripts/.billy-cursor-step
 .DS_Store
 Thumbs.db
 .vercel
+
+# Local GCP service-account keys and policy files
+.secrets/
+
+
+# Local tool binaries (cloudflared, etc.)
+.tools/
+
+# Local Goat Mode debug dumps
+backend/app/wet-run-ai.json
+backend/app/*.wet-run.json
+
