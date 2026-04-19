@@ -26,6 +26,7 @@ on:
       - 'scripts/**'
       - 'README.md'
       - '.github/workflows/deploy-vercel-web.yml'
+      - 'scripts/deploy_web_vercel.ps1'
   workflow_dispatch:
 
 jobs:
