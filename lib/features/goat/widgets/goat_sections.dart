@@ -1041,6 +1041,14 @@ String _targetLabel(String key) {
 
 // ─── at-a-glance metrics (deterministic layer) ─────────────────────────────
 
+String _metricHighlightValue(String key, num v, String? unit) {
+  if (key == 'savings_rate') return '${(v * 100).round()}%';
+  if (key.contains('runway') && key.contains('month')) {
+    return '${v.toStringAsFixed(1)} mo';
+  }
+  return _money(v.toDouble(), unit);
+}
+
 class GoatMetricHighlights extends StatelessWidget {
   const GoatMetricHighlights({
     super.key,
@@ -1055,9 +1063,13 @@ class GoatMetricHighlights extends StatelessWidget {
 
   static const _items = <(String key, String label)>[
     ('net_worth', 'Net worth'),
+    ('income_total', 'Income'),
+    ('expense_total', 'Expenses'),
     ('month_to_date_spend', 'Month to date'),
     ('daily_spend_avg', 'Daily avg spend'),
     ('savings_rate', 'Savings rate'),
+    ('spend_trend_delta', 'Spend trend'),
+    ('emergency_fund_runway_months', 'EF runway'),
   ];
 
   @override
@@ -1069,9 +1081,7 @@ class GoatMetricHighlights extends StatelessWidget {
       final v = m?.value;
       if (v == null || m == null) continue;
       if (v is! num) continue;
-      final formatted = key == 'savings_rate'
-          ? '${(v * 100).round()}%'
-          : _money(v, m.unit);
+      final formatted = _metricHighlightValue(key, v, m.unit);
       chips.add((key: key, label: label, value: formatted, metric: m));
     }
     if (chips.isEmpty) return const SizedBox.shrink();

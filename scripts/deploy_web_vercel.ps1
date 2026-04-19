@@ -46,7 +46,7 @@ if (-not $SkipBuild) {
 
 $webOut = Join-Path $repoRoot 'build\web'
 if (-not (Test-Path (Join-Path $webOut 'index.html'))) {
-    throw "Missing $webOut\index.html — run without -SkipBuild first."
+    throw "Missing $webOut\index.html - run without -SkipBuild first."
 }
 
 Write-Host '[>] staging Vercel config + api/* into build\web' -ForegroundColor Cyan

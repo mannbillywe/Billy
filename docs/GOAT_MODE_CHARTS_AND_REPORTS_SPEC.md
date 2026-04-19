@@ -30,7 +30,7 @@ Frontend uses `points[].p50` (and optional `p10`/`p90`) for a **line + band** ch
 
 ## 2. Optional `charts` block inside `summary_json` (no DB migration)
 
-Add a top-level key on the existing `summary_json` column:
+Implemented in backend (`goat/summary_charts.py`, merged in `runner._snapshot_row` via `merge_summary_charts`). Example shape:
 
 ```json
 {
@@ -40,20 +40,29 @@ Add a top-level key on the existing `summary_json` column:
     "timeseries": [
       {
         "id": "spend_90d",
-        "title": "Outflows (90d)",
+        "title": "…",
         "unit": "INR",
-        "points": [{ "d": "2026-01-15", "v": 12000.5 }, { "d": "2026-02-01", "v": 11800 }]
+        "points": [{ "d": "2026-01-15", "v": 12000.5 }]
+      },
+      {
+        "id": "metric:emergency_fund_runway_months",
+        "title": "…",
+        "unit": null,
+        "points": [{ "d": "…", "v": 4.2 }]
       }
     ],
     "bars": [
       {
         "id": "category_spend_mtd",
-        "title": "Spend by category (MTD)",
+        "title": "…",
         "unit": "INR",
-        "items": [
-          { "label": "Food", "value": 4200 },
-          { "label": "Transit", "value": 900 }
-        ]
+        "items": [{ "label": "Food", "value": 4200 }]
+      },
+      {
+        "id": "metric:expense_total",
+        "title": "…",
+        "unit": "INR",
+        "items": [{ "label": "…", "value": 1 }]
       }
     ]
   }
@@ -65,16 +74,18 @@ Rules:
 - `version` is an int; clients ignore unknown versions but still try to read known keys.
 - `points[].d` is ISO date; `points[].v` is a number.
 - `items[].label` short string; `items[].value` number.
-- Keep arrays **bounded** (e.g. ≤ 120 points per series, ≤ 24 bars) for mobile performance.
+- Keep arrays **bounded** (e.g. ≤ 120 points per series; bars capped per backend policy).
 
-The Flutter app parses this into `GoatSnapshot.charts` when present and can attach charts to metric drill-downs by matching `id` (convention: `metric:<metric_key>` if tied to a deterministic metric).
+The Flutter app parses this into `GoatSnapshot.charts` when present. **Metric drill-down charts** use ids `metric:<metric_key>` (e.g. `metric:expense_total`, `metric:emergency_fund_runway_months`). **Overview** lists each `timeseries` entry as a tappable row that opens a full chart sheet.
 
 ## 3. Optional per-metric narrative for reports
 
-Inside each `metrics_json.metrics[]` object, optional string fields (ignored if absent):
+Backend (`goat/contracts.py` + `goat/deterministic.py` overview) may set on each `metrics_json.metrics[]` object:
 
 - `report_title` — headline for the metric drill-down.
 - `report_summary` — 1–3 sentences plain language.
+
+Covered keys in backend include: `net_worth`, `income_total`, `expense_total`, `savings_rate`, `spend_trend_delta`, `emergency_fund_runway_months`.
 
 ## 4. What the app does today without backend changes
 

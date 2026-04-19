@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/billy_theme.dart';
+import '../models/goat_chart_models.dart';
 import '../models/goat_models.dart';
 import '../providers/goat_providers.dart';
 import 'goat_chart_widgets.dart';
@@ -14,6 +15,115 @@ String _isoCurrency(GoatSnapshot s) {
     if (m.unit != null && m.unit!.length == 3) return m.unit!.toUpperCase();
   }
   return 'INR';
+}
+
+class _GoatTimeseriesChartStrip extends StatelessWidget {
+  const _GoatTimeseriesChartStrip({
+    required this.charts,
+    required this.defaultCurrency,
+  });
+
+  final GoatChartBundle charts;
+  final String defaultCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    if (charts.timeseries.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.timeline_rounded,
+                  size: 16,
+                  color: BillyTheme.gray500,
+                ),
+                SizedBox(width: 6),
+                Text(
+                  'Trend charts',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: BillyTheme.gray600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 48,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              itemCount: charts.timeseries.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final ts = charts.timeseries[i];
+                return Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => showGoatTimeseriesReportSheet(
+                      context,
+                      spec: ts,
+                      currencyCode: ts.unit ?? defaultCurrency,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: BillyTheme.gray100),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.show_chart_rounded,
+                            size: 18,
+                            color: BillyTheme.emerald700,
+                          ),
+                          const SizedBox(width: 8),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 200),
+                            child: Text(
+                              ts.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: BillyTheme.gray800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: BillyTheme.emerald700,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Tab 1 — headline snapshot: hero, scores, headline metrics, AI pillars.
@@ -44,6 +154,11 @@ class GoatOverviewTab extends StatelessWidget {
           GoatHeroCard(snapshot: snapshot, previous: previous),
           GoatScoreRow(snapshot: snapshot, previous: previous),
           GoatCoveragePillarChart(coverage: snapshot.coverage),
+          if (snapshot.charts != null)
+            _GoatTimeseriesChartStrip(
+              charts: snapshot.charts!,
+              defaultCurrency: cur,
+            ),
           if (snapshot.charts != null)
             for (final bar in snapshot.charts!.barGroups)
               Padding(

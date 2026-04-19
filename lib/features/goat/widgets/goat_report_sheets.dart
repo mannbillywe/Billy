@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/formatting/app_currency.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../../analytics/widgets/trend_chart.dart';
+import '../models/goat_chart_models.dart';
 import '../models/goat_models.dart';
 import 'goat_chart_widgets.dart';
 
@@ -35,6 +36,9 @@ String _forecastTitle(String key) {
 String _fmtMetricValue(GoatMetric m) {
   final v = m.value;
   if (v is num) {
+    if (m.key.contains('runway') && m.key.contains('month')) {
+      return '${v.toStringAsFixed(1)} mo';
+    }
     if (m.unit != null &&
         (m.unit!.toUpperCase() == 'INR' ||
             m.unit!.toUpperCase() == 'USD' ||
@@ -47,6 +51,93 @@ String _fmtMetricValue(GoatMetric m) {
     return v.toString();
   }
   return v?.toString() ?? '—';
+}
+
+/// Opens a bottom sheet for a `summary_json.charts.timeseries[]` entry (e.g. spend_90d).
+Future<void> showGoatTimeseriesReportSheet(
+  BuildContext context, {
+  required GoatChartTimeseriesSpec spec,
+  required String currencyCode,
+}) async {
+  if (spec.points.isEmpty) return;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.35,
+      maxChildSize: 0.94,
+      expand: false,
+      builder: (context, scrollCtrl) {
+        return DecoratedBox(
+          decoration: const BoxDecoration(
+            color: BillyTheme.scaffoldBg,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: ListView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: BillyTheme.gray300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                spec.title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: BillyTheme.gray800,
+                  letterSpacing: -0.35,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                spec.id,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: BillyTheme.gray400,
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (spec.points.length >= 2)
+                TrendChart(
+                  data: spec.points,
+                  currencyCode: spec.unit ?? currencyCode,
+                )
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: BillyTheme.gray100),
+                  ),
+                  child: Text(
+                    'Latest: ${AppCurrency.format(spec.points.first.$2, spec.unit ?? currencyCode)}',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: BillyTheme.gray700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
 }
 
 /// Full-screen style report for one forecast target.
@@ -364,7 +455,7 @@ Future<void> showGoatMetricReportSheet(
                   ),
                 ),
               ],
-              if (ts != null && ts.points.length >= 2) ...[
+              if (ts != null) ...[
                 const SizedBox(height: 20),
                 Text(
                   ts.title,
@@ -375,7 +466,17 @@ Future<void> showGoatMetricReportSheet(
                   ),
                 ),
                 const SizedBox(height: 10),
-                TrendChart(data: ts.points, currencyCode: ts.unit ?? currency),
+                if (ts.points.length >= 2)
+                  TrendChart(data: ts.points, currencyCode: ts.unit ?? currency)
+                else if (ts.points.isNotEmpty)
+                  Text(
+                    'Series: ${ts.points.length} point(s) — run again when more history exists.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: BillyTheme.gray500,
+                      height: 1.35,
+                    ),
+                  ),
               ],
               if (metric.inputsUsed.isNotEmpty ||
                   metric.inputsMissing.isNotEmpty) ...[
