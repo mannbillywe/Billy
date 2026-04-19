@@ -4,8 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../models/goat_models.dart';
 import '../providers/goat_providers.dart';
+import 'goat_chart_widgets.dart';
 import 'goat_humanize.dart';
+import 'goat_report_sheets.dart';
 import 'goat_sections.dart';
+
+String _isoCurrency(GoatSnapshot s) {
+  for (final m in s.metrics) {
+    if (m.unit != null && m.unit!.length == 3) return m.unit!.toUpperCase();
+  }
+  return 'INR';
+}
 
 /// Tab 1 — headline snapshot: hero, scores, headline metrics, AI pillars.
 class GoatOverviewTab extends StatelessWidget {
@@ -22,6 +31,7 @@ class GoatOverviewTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cur = _isoCurrency(snapshot);
     return RefreshIndicator(
       color: BillyTheme.emerald600,
       onRefresh: onRefresh,
@@ -33,7 +43,26 @@ class GoatOverviewTab extends StatelessWidget {
         children: [
           GoatHeroCard(snapshot: snapshot, previous: previous),
           GoatScoreRow(snapshot: snapshot, previous: previous),
-          GoatMetricHighlights(snapshot: snapshot),
+          GoatCoveragePillarChart(coverage: snapshot.coverage),
+          if (snapshot.charts != null)
+            for (final bar in snapshot.charts!.barGroups)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: GoatBackendBarChart(
+                  title: bar.title,
+                  items: bar.items,
+                  currencyCode: bar.unit ?? cur,
+                ),
+              ),
+          GoatMetricHighlights(
+            snapshot: snapshot,
+            onMetricTap: (metric, label) => showGoatMetricReportSheet(
+              context,
+              snapshot: snapshot,
+              metric: metric,
+              label: label,
+            ),
+          ),
           if (snapshot.ai.pillars.isNotEmpty)
             GoatInsightsSection(snapshot: snapshot),
         ],
@@ -116,17 +145,20 @@ class _UnlockableScopesCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.lock_open_rounded,
-                    size: 18, color: BillyTheme.emerald700),
+                Icon(
+                  Icons.lock_open_rounded,
+                  size: 18,
+                  color: BillyTheme.emerald700,
+                ),
                 const SizedBox(width: 8),
-            const Text(
-              'Can unlock',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: BillyTheme.gray800,
-              ),
-            ),
+                const Text(
+                  'Can unlock',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: BillyTheme.gray800,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -243,18 +275,20 @@ class GoatSafetyTab extends StatelessWidget {
   }
 
   bool _hasWatchouts(GoatSnapshot s, Set<String> priorityAnomalyEntities) {
-    final hasRisk = s.risks.any((r) =>
-        r.severity == GoatSeverity.warn ||
-        r.severity == GoatSeverity.critical);
+    final hasRisk = s.risks.any(
+      (r) =>
+          r.severity == GoatSeverity.warn ||
+          r.severity == GoatSeverity.critical,
+    );
     if (hasRisk) return true;
-    final anomalies = dedupeAnomalies(s.anomalies
-        .where((a) => a.severity.rank >= GoatSeverity.watch.rank)
-        .toList(growable: false));
+    final anomalies = dedupeAnomalies(
+      s.anomalies
+          .where((a) => a.severity.rank >= GoatSeverity.watch.rank)
+          .toList(growable: false),
+    );
     for (final a in anomalies) {
       final id = a.entityId;
-      if (id != null &&
-          id.isNotEmpty &&
-          priorityAnomalyEntities.contains(id)) {
+      if (id != null && id.isNotEmpty && priorityAnomalyEntities.contains(id)) {
         continue;
       }
       return true;
@@ -311,8 +345,11 @@ class GoatRunLogTab extends ConsumerWidget {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.history_rounded,
-                            size: 18, color: BillyTheme.gray500),
+                        Icon(
+                          Icons.history_rounded,
+                          size: 18,
+                          color: BillyTheme.gray500,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'Past runs',
@@ -338,10 +375,7 @@ class GoatRunLogTab extends ConsumerWidget {
 }
 
 class _RunSummaryCard extends StatelessWidget {
-  const _RunSummaryCard({
-    required this.bySeverity,
-    required this.byKind,
-  });
+  const _RunSummaryCard({required this.bySeverity, required this.byKind});
 
   final Map<String, int> bySeverity;
   final Map<String, int> byKind;
@@ -375,8 +409,11 @@ class _RunSummaryCard extends StatelessWidget {
           children: [
             const Row(
               children: [
-                Icon(Icons.pie_chart_outline_rounded,
-                    size: 18, color: BillyTheme.gray500),
+                Icon(
+                  Icons.pie_chart_outline_rounded,
+                  size: 18,
+                  color: BillyTheme.gray500,
+                ),
                 SizedBox(width: 8),
                 Text(
                   'This run',
@@ -395,8 +432,7 @@ class _RunSummaryCard extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   for (final e in bySeverity.entries)
-                    if (e.value > 0)
-                      _StatPill(label: e.key, value: e.value),
+                    if (e.value > 0) _StatPill(label: e.key, value: e.value),
                 ],
               ),
             ],
@@ -480,8 +516,11 @@ class _LayerErrorsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.warning_amber_rounded,
-                    size: 18, color: Colors.amber.shade800),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 18,
+                  color: Colors.amber.shade800,
+                ),
                 const SizedBox(width: 8),
                 const Text(
                   'Heads up',
@@ -560,10 +599,7 @@ class _JobTile extends StatelessWidget {
                 if (job.createdAt != null)
                   Text(
                     _fmt(job.createdAt!),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: BillyTheme.gray500,
-                    ),
+                    style: TextStyle(fontSize: 11, color: BillyTheme.gray500),
                   ),
                 if ((job.errorMessage ?? '').isNotEmpty)
                   Text(

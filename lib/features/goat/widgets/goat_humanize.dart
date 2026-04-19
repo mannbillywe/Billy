@@ -57,8 +57,9 @@ String formatInr(num value) {
   } else if (amount >= 100000) {
     body = '${(amount / 100000).toStringAsFixed(2)} L';
   } else if (amount >= 1000) {
-    body = amount.toStringAsFixed(0).replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    body = amount
+        .toStringAsFixed(0)
+        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
   } else {
     body = amount.toStringAsFixed(0);
   }
@@ -227,8 +228,9 @@ String _buildRecBodyFromObservation(GoatRecommendation rec) {
           if (amt != null && median != null && median > 0) {
             final mult = (amt / median).toStringAsFixed(1);
             final vendorBit = vendor != null ? ' at $vendor' : '';
-            final sampleBit =
-                samples != null ? ' (median ${formatInr(median)}, $samples samples)' : '';
+            final sampleBit = samples != null
+                ? ' (median ${formatInr(median)}, $samples samples)'
+                : '';
             return 'A ${formatInr(amt)} charge$vendorBit is $mult× the typical amount for this category$sampleBit.';
           }
           break;
@@ -413,8 +415,10 @@ String humanRiskBody(GoatRiskScore r) {
     parts.add('${(r.probability! * 100).round()}% likely this cycle.');
   }
   if (r.reasonCodes.isNotEmpty) {
-    final drivers =
-        r.reasonCodes.map(_humanizeReasonCode).where((s) => s.isNotEmpty).toList();
+    final drivers = r.reasonCodes
+        .map(_humanizeReasonCode)
+        .where((s) => s.isNotEmpty)
+        .toList();
     if (drivers.isNotEmpty) {
       parts.add('Drivers: ${drivers.join(' · ')}.');
     }
@@ -487,11 +491,11 @@ GoatAIPillar rewriteSyntheticPillar(GoatAIPillar p, GoatSnapshot snap) {
     case 'overview':
       final covPct = (snap.coverage.score * 100).round();
       final readiness = snap.readiness.label.toLowerCase();
-      final open = snap.recommendationCountsByKind.values
-          .fold<int>(0, (a, b) => a + b);
-      final parts = <String>[
-        'Signal quality: $readiness ($covPct% coverage).',
-      ];
+      final open = snap.recommendationCountsByKind.values.fold<int>(
+        0,
+        (a, b) => a + b,
+      );
+      final parts = <String>['Signal quality: $readiness ($covPct% coverage).'];
       if (open > 0) parts.add('$open item(s) worth reviewing below.');
       return GoatAIPillar(
         pillar: p.pillar,
@@ -513,6 +517,8 @@ GoatAIPillar rewriteSyntheticPillar(GoatAIPillar p, GoatSnapshot snap) {
           value: {},
           reasonCodes: [],
           entityLabel: null,
+          seriesPoints: [],
+          seriesUnit: null,
         ),
       );
       if (fc.target.isNotEmpty && fc.p50 != null) {
@@ -523,7 +529,8 @@ GoatAIPillar rewriteSyntheticPillar(GoatAIPillar p, GoatSnapshot snap) {
           pillar: p.pillar,
           observation:
               '$pretty projected at ${_forecastMoney(fc.p50!, currency)} over the next ${horizon == 0 ? 'cycle' : '$horizon days'}.',
-          inference: 'Treat the low–high range as the primary signal, not the midpoint.',
+          inference:
+              'Treat the low–high range as the primary signal, not the midpoint.',
           confidenceBucket: p.confidenceBucket,
         );
       }
@@ -539,7 +546,8 @@ GoatAIPillar rewriteSyntheticPillar(GoatAIPillar p, GoatSnapshot snap) {
           pillar: p.pillar,
           observation:
               '${_riskLabel(top.target)} · ${((top.probability ?? 0) * 100).round()}% likely this cycle.',
-          inference: 'Severity is the signal — act on the label, not the number.',
+          inference:
+              'Severity is the signal — act on the label, not the number.',
           confidenceBucket: p.confidenceBucket,
         );
       }

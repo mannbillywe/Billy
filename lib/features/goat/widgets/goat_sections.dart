@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/billy_theme.dart';
 import '../models/goat_models.dart';
 import 'goat_humanize.dart';
+import 'goat_report_sheets.dart';
 
 // ─── shared colors for severity ────────────────────────────────────────────
 
@@ -59,7 +60,8 @@ class GoatHeroCard extends StatelessWidget {
     // The deterministic fallback narrative contains strings like "scope=full"
     // and "deterministic fallback phrasing" — treat it as absent and use a
     // computed headline instead.
-    final looksLikeFallback = rawNarrative.contains('deterministic fallback') ||
+    final looksLikeFallback =
+        rawNarrative.contains('deterministic fallback') ||
         rawNarrative.contains('scope=') ||
         rawNarrative.contains('readiness L');
     final hasNarrative = rawNarrative.isNotEmpty && !looksLikeFallback;
@@ -91,15 +93,20 @@ class GoatHeroCard extends StatelessWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.auto_awesome_rounded,
-                          size: 12, color: Colors.white),
+                      const Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 12,
+                        color: Colors.white,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Snapshot',
@@ -139,9 +146,7 @@ class GoatHeroCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              hasNarrative
-                  ? narrative
-                  : _deterministicHeadline(snapshot),
+              hasNarrative ? narrative : _deterministicHeadline(snapshot),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -186,8 +191,8 @@ class GoatHeroCard extends StatelessWidget {
             improved
                 ? Icons.trending_up_rounded
                 : (same
-                    ? Icons.trending_flat_rounded
-                    : Icons.trending_down_rounded),
+                      ? Icons.trending_flat_rounded
+                      : Icons.trending_down_rounded),
             size: 14,
             color: Colors.white,
           ),
@@ -215,12 +220,16 @@ class GoatHeroCard extends StatelessWidget {
     if (mtd?.value is num) {
       bits.add('MTD spend ${_money(mtd!.value as num, mtd.unit)}');
     }
-    final openRecs =
-        s.recommendationCountsByKind.values.fold<int>(0, (a, b) => a + b);
+    final openRecs = s.recommendationCountsByKind.values.fold<int>(
+      0,
+      (a, b) => a + b,
+    );
     if (openRecs > 0) {
-      bits.add(openRecs == 1
-          ? '1 priority to review'
-          : '$openRecs priorities to review');
+      bits.add(
+        openRecs == 1
+            ? '1 priority to review'
+            : '$openRecs priorities to review',
+      );
     }
     if (bits.isEmpty) {
       return 'Numbers update each run — check the tabs below for details.';
@@ -242,8 +251,10 @@ class GoatScoreRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final openRecs =
-        snapshot.recommendationCountsByKind.values.fold<int>(0, (a, b) => a + b);
+    final openRecs = snapshot.recommendationCountsByKind.values.fold<int>(
+      0,
+      (a, b) => a + b,
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -341,7 +352,9 @@ class _StatCard extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-                color: tintBg, borderRadius: BorderRadius.circular(10)),
+              color: tintBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Icon(icon, color: tintFg, size: 18),
           ),
           const SizedBox(height: 12),
@@ -412,9 +425,7 @@ class GoatPrioritySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final phrasingByFp = {
-      for (final p in aiPhrasings) p.recFingerprint: p,
-    };
+    final phrasingByFp = {for (final p in aiPhrasings) p.recFingerprint: p};
     // Collapse recs that share the same fingerprint/kind-entity so we don't
     // show three copies of the same "Category spike" card.
     final seen = <String>{};
@@ -504,12 +515,10 @@ class _PriorityCard extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                    color: colors.bg, borderRadius: BorderRadius.circular(10)),
-                child: Icon(
-                  _iconForKind(rec.kind),
-                  size: 17,
-                  color: colors.fg,
+                  color: colors.bg,
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: Icon(_iconForKind(rec.kind), size: 17, color: colors.fg),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -525,8 +534,7 @@ class _PriorityCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: colors.bg,
                   borderRadius: BorderRadius.circular(6),
@@ -562,13 +570,17 @@ class _PriorityCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                  color: BillyTheme.gray50,
-                  borderRadius: BorderRadius.circular(8)),
+                color: BillyTheme.gray50,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline_rounded,
-                      size: 14, color: BillyTheme.gray500),
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: BillyTheme.gray500,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -593,12 +605,15 @@ class _PriorityCard extends StatelessWidget {
                 style: TextButton.styleFrom(
                   foregroundColor: BillyTheme.gray500,
                   minimumSize: const Size(64, 32),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 0,
+                  ),
                 ),
-                child: const Text('Dismiss',
-                    style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700)),
+                child: const Text(
+                  'Dismiss',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
@@ -648,7 +663,9 @@ class GoatInsightsSection extends StatelessWidget {
     // names, method names).
     final cleaned = <GoatAIPillar>[];
     for (final p in snapshot.ai.pillars) {
-      final next = isSyntheticPillar(p) ? rewriteSyntheticPillar(p, snapshot) : p;
+      final next = isSyntheticPillar(p)
+          ? rewriteSyntheticPillar(p, snapshot)
+          : p;
       if (isSyntheticPillar(next)) continue;
       cleaned.add(next);
     }
@@ -688,8 +705,7 @@ class _InsightCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: BillyTheme.emerald50,
                   borderRadius: BorderRadius.circular(6),
@@ -807,8 +823,9 @@ class GoatForecastSection extends StatelessWidget {
     final maxHorizon = forecasts
         .map((f) => f.horizonDays ?? 0)
         .fold<int>(0, (a, b) => a > b ? a : b);
-    final horizonLabel =
-        maxHorizon > 0 ? 'the next $maxHorizon days' : 'the coming period';
+    final horizonLabel = maxHorizon > 0
+        ? 'the next $maxHorizon days'
+        : 'the coming period';
 
     return _SectionShell(
       kicker: 'Outlook',
@@ -819,7 +836,15 @@ class GoatForecastSection extends StatelessWidget {
           for (final f in forecasts.take(4))
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _ForecastCard(target: f, currency: _inferCurrency(snapshot)),
+              child: _ForecastCard(
+                target: f,
+                currency: _inferCurrency(snapshot),
+                onOpen: () => showGoatForecastReportSheet(
+                  context,
+                  snapshot: snapshot,
+                  target: f,
+                ),
+              ),
             ),
         ],
       ),
@@ -828,83 +853,114 @@ class GoatForecastSection extends StatelessWidget {
 }
 
 class _ForecastCard extends StatelessWidget {
-  const _ForecastCard({required this.target, required this.currency});
+  const _ForecastCard({
+    required this.target,
+    required this.currency,
+    required this.onOpen,
+  });
   final GoatForecastTarget target;
   final String currency;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final p10 = target.p10;
     final p50 = target.p50;
     final p90 = target.p90;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onOpen,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: BillyTheme.gray100),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: BillyTheme.gray100),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  _targetLabel(target.target),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _targetLabel(target.target),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: BillyTheme.gray800,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _forecastModelLabel(target),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: BillyTheme.gray400,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              if (target.horizonDays != null && target.horizonDays! > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Window · next ${target.horizonDays} days',
                   style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: BillyTheme.gray800,
+                    fontSize: 11,
+                    color: BillyTheme.gray500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              Text(
-                _forecastModelLabel(target),
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: BillyTheme.gray400,
-                  letterSpacing: 0.5,
+              ],
+              const SizedBox(height: 10),
+              if (p50 != null)
+                Text(
+                  _money(p50, currency),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: BillyTheme.gray800,
+                    letterSpacing: -0.4,
+                  ),
                 ),
+              if (p10 != null && p90 != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'Typical range ${_money(p10, currency)} – ${_money(p90, currency)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: BillyTheme.gray500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _RangeBar(p10: p10, p50: p50 ?? (p10 + p90) / 2, p90: p90),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    'Full report',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: BillyTheme.emerald700,
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: BillyTheme.emerald700,
+                  ),
+                ],
               ),
             ],
           ),
-          if (target.horizonDays != null && target.horizonDays! > 0) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Window · next ${target.horizonDays} days',
-              style: const TextStyle(
-                fontSize: 11,
-                color: BillyTheme.gray500,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          if (p50 != null)
-            Text(
-              _money(p50, currency),
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: BillyTheme.gray800,
-                letterSpacing: -0.4,
-              ),
-            ),
-          if (p10 != null && p90 != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              'Typical range ${_money(p10, currency)} – ${_money(p90, currency)}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: BillyTheme.gray500,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _RangeBar(p10: p10, p50: p50 ?? (p10 + p90) / 2, p90: p90),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -944,8 +1000,7 @@ class _RangeBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(3),
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            BillyTheme.emerald600.withValues(alpha: 0.35),
+                        color: BillyTheme.emerald600.withValues(alpha: 0.35),
                         blurRadius: 6,
                       ),
                     ],
@@ -987,8 +1042,16 @@ String _targetLabel(String key) {
 // ─── at-a-glance metrics (deterministic layer) ─────────────────────────────
 
 class GoatMetricHighlights extends StatelessWidget {
-  const GoatMetricHighlights({super.key, required this.snapshot});
+  const GoatMetricHighlights({
+    super.key,
+    required this.snapshot,
+    this.onMetricTap,
+  });
+
   final GoatSnapshot snapshot;
+
+  /// Opens metric drill-down (chart + narrative) when set.
+  final void Function(GoatMetric metric, String label)? onMetricTap;
 
   static const _items = <(String key, String label)>[
     ('net_worth', 'Net worth'),
@@ -999,16 +1062,17 @@ class GoatMetricHighlights extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chips = <({String label, String value})>[];
+    final chips =
+        <({String key, String label, String value, GoatMetric metric})>[];
     for (final (key, label) in _items) {
       final m = snapshot.metricByKey(key);
       final v = m?.value;
-      if (v == null) continue;
+      if (v == null || m == null) continue;
       if (v is! num) continue;
       final formatted = key == 'savings_rate'
           ? '${(v * 100).round()}%'
-          : _money(v, m?.unit);
-      chips.add((label: label, value: formatted));
+          : _money(v, m.unit);
+      chips.add((key: key, label: label, value: formatted, metric: m));
     }
     if (chips.isEmpty) return const SizedBox.shrink();
 
@@ -1044,10 +1108,12 @@ class GoatMetricHighlights extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(width: 10),
               itemBuilder: (context, i) {
                 final c = chips[i];
-                return Container(
+                final card = Container(
                   width: 118,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
@@ -1089,6 +1155,15 @@ class GoatMetricHighlights extends StatelessWidget {
                     ],
                   ),
                 );
+                if (onMetricTap == null) return card;
+                return Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => onMetricTap!(c.metric, c.label),
+                    borderRadius: BorderRadius.circular(16),
+                    child: card,
+                  ),
+                );
               },
             ),
           ),
@@ -1108,15 +1183,18 @@ class GoatWatchoutsSection extends StatelessWidget {
   });
 
   final GoatSnapshot snapshot;
+
   /// Entity IDs already shown as priority cards — hide duplicate anomaly rows.
   final Set<String> anomalyEntityIdsInPriorities;
 
   @override
   Widget build(BuildContext context) {
     final risks = snapshot.risks
-        .where((r) =>
-            r.severity == GoatSeverity.warn ||
-            r.severity == GoatSeverity.critical)
+        .where(
+          (r) =>
+              r.severity == GoatSeverity.warn ||
+              r.severity == GoatSeverity.critical,
+        )
         .toList(growable: false);
     // Collapse duplicate anomalies (same kind + same entity) and keep the most
     // severe representative of each cluster.
@@ -1253,7 +1331,9 @@ class _WatchoutRow extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-                color: c.bg, borderRadius: BorderRadius.circular(10)),
+              color: c.bg,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Icon(icon, color: c.fg, size: 17),
           ),
           const SizedBox(width: 12),
@@ -1275,7 +1355,9 @@ class _WatchoutRow extends StatelessWidget {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: c.bg,
                         borderRadius: BorderRadius.circular(6),
@@ -1365,8 +1447,11 @@ class _CoachingCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: BillyTheme.emerald100),
             ),
-            child: const Icon(Icons.bolt_rounded,
-                color: BillyTheme.emerald700, size: 18),
+            child: const Icon(
+              Icons.bolt_rounded,
+              color: BillyTheme.emerald700,
+              size: 18,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1456,12 +1541,13 @@ class GoatMissingInputsSection extends StatelessWidget {
                           for (final u in m.unlocks.take(4))
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
                               decoration: BoxDecoration(
                                 color: BillyTheme.gray50,
                                 borderRadius: BorderRadius.circular(6),
-                                border:
-                                    Border.all(color: BillyTheme.gray100),
+                                border: Border.all(color: BillyTheme.gray100),
                               ),
                               child: Text(
                                 u.replaceAll('_', ' '),
@@ -1499,10 +1585,7 @@ class GoatFooterMeta extends StatelessWidget {
           icon: Icons.schedule_rounded,
           label: _relativeTime(snapshot.generatedAt),
         ),
-      _MetaChip(
-        icon: Icons.layers_rounded,
-        label: snapshot.scope,
-      ),
+      _MetaChip(icon: Icons.layers_rounded, label: snapshot.scope),
       if (snapshot.isPartial)
         const _MetaChip(
           icon: Icons.warning_amber_rounded,
@@ -1644,8 +1727,9 @@ String _money(num value, String? unit) {
   } else if (amount >= 100000) {
     formatted = '${(amount / 100000).toStringAsFixed(2)} L';
   } else if (amount >= 1000) {
-    formatted = amount.toStringAsFixed(0).replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    formatted = amount
+        .toStringAsFixed(0)
+        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
   } else {
     formatted = amount.toStringAsFixed(0);
   }

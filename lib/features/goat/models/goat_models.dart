@@ -6,6 +6,8 @@
 // degrades gracefully (see docs/GOAT_MODE_INTEGRATION_GUIDE.md section 5).
 import 'dart:convert';
 
+import 'goat_chart_models.dart';
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 Map<String, dynamic> _asMap(dynamic v) {
@@ -24,9 +26,11 @@ List<Map<String, dynamic>> _asListOfMaps(dynamic v) {
   if (v is List) {
     return v
         .whereType<dynamic>()
-        .map((e) => e is Map<String, dynamic>
-            ? e
-            : (e is Map ? e.cast<String, dynamic>() : <String, dynamic>{}))
+        .map(
+          (e) => e is Map<String, dynamic>
+              ? e
+              : (e is Map ? e.cast<String, dynamic>() : <String, dynamic>{}),
+        )
         .toList(growable: false);
   }
   if (v is String && v.isNotEmpty) {
@@ -129,18 +133,18 @@ GoatSeverity severityFrom(String? raw) {
 
 extension GoatSeverityX on GoatSeverity {
   int get rank => switch (this) {
-        GoatSeverity.critical => 3,
-        GoatSeverity.warn => 2,
-        GoatSeverity.watch => 1,
-        GoatSeverity.info => 0,
-      };
+    GoatSeverity.critical => 3,
+    GoatSeverity.warn => 2,
+    GoatSeverity.watch => 1,
+    GoatSeverity.info => 0,
+  };
 
   String get label => switch (this) {
-        GoatSeverity.critical => 'Critical',
-        GoatSeverity.warn => 'Important',
-        GoatSeverity.watch => 'Watch',
-        GoatSeverity.info => 'Good to know',
-      };
+    GoatSeverity.critical => 'Critical',
+    GoatSeverity.warn => 'Important',
+    GoatSeverity.watch => 'Watch',
+    GoatSeverity.info => 'Good to know',
+  };
 }
 
 // ─── models ────────────────────────────────────────────────────────────────
@@ -156,6 +160,8 @@ class GoatMetric {
     required this.inputsUsed,
     required this.inputsMissing,
     required this.detail,
+    required this.reportTitle,
+    required this.reportSummary,
   });
 
   final String key;
@@ -164,28 +170,41 @@ class GoatMetric {
   final double? confidence;
   final String confidenceBucket;
   final List<String> reasonCodes;
+
   /// Declared data sources the metric consumed (backend `Metric.inputs_used`).
   final List<String> inputsUsed;
+
   /// Missing inputs that capped confidence (backend `Metric.inputs_missing`).
   final List<String> inputsMissing;
   final Map<String, dynamic> detail;
 
-  factory GoatMetric.fromJson(Map<String, dynamic> m) => GoatMetric(
-        key: (m['key'] ?? '') as String,
-        value: m['value'],
-        unit: _asString(m['unit']),
-        confidence: _asDouble(m['confidence']),
-        confidenceBucket: (m['confidence_bucket'] ?? 'unknown') as String,
-        reasonCodes:
-            (m['reason_codes'] as List? ?? const []).map((e) => e.toString()).toList(),
-        inputsUsed: (m['inputs_used'] as List? ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        inputsMissing: (m['inputs_missing'] as List? ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        detail: _asMap(m['detail']),
-      );
+  /// Optional drill-down copy from backend (`report_title` / inside `detail`).
+  final String? reportTitle;
+  final String? reportSummary;
+
+  factory GoatMetric.fromJson(Map<String, dynamic> m) {
+    final d = _asMap(m['detail']);
+    return GoatMetric(
+      key: (m['key'] ?? '') as String,
+      value: m['value'],
+      unit: _asString(m['unit']),
+      confidence: _asDouble(m['confidence']),
+      confidenceBucket: (m['confidence_bucket'] ?? 'unknown') as String,
+      reasonCodes: (m['reason_codes'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      inputsUsed: (m['inputs_used'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      inputsMissing: (m['inputs_missing'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      detail: d,
+      reportTitle: _asString(m['report_title']) ?? _asString(d['report_title']),
+      reportSummary:
+          _asString(m['report_summary']) ?? _asString(d['report_summary']),
+    );
+  }
 }
 
 class GoatCoverage {
@@ -208,16 +227,15 @@ class GoatCoverage {
   factory GoatCoverage.fromJson(Map<String, dynamic> m) {
     final breakdownRaw = _asMap(m['breakdown']);
     final breakdown = <String, double>{
-      for (final e in breakdownRaw.entries)
-        e.key: _asDouble(e.value) ?? 0.0,
+      for (final e in breakdownRaw.entries) e.key: _asDouble(e.value) ?? 0.0,
     };
     return GoatCoverage(
       score: _asDouble(m['coverage_score']) ?? 0.0,
       readiness: readinessFrom(_asString(m['readiness_level'])),
       breakdown: breakdown,
-      missingInputs: _asListOfMaps(m['missing_inputs'])
-          .map(GoatMissingInput.fromJson)
-          .toList(growable: false),
+      missingInputs: _asListOfMaps(
+        m['missing_inputs'],
+      ).map(GoatMissingInput.fromJson).toList(growable: false),
       inputsUsed: (m['inputs_used'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(),
@@ -242,15 +260,40 @@ class GoatMissingInput {
   final List<String> unlocks;
   final GoatSeverity severity;
 
-  factory GoatMissingInput.fromJson(Map<String, dynamic> m) =>
-      GoatMissingInput(
-        key: (m['key'] ?? '') as String,
-        label: (m['label'] ?? '') as String,
-        why: (m['why'] ?? '') as String,
-        unlocks: (m['unlocks'] as List? ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        severity: severityFrom(_asString(m['severity'])),
+  factory GoatMissingInput.fromJson(Map<String, dynamic> m) => GoatMissingInput(
+    key: (m['key'] ?? '') as String,
+    label: (m['label'] ?? '') as String,
+    why: (m['why'] ?? '') as String,
+    unlocks: (m['unlocks'] as List? ?? const [])
+        .map((e) => e.toString())
+        .toList(),
+    severity: severityFrom(_asString(m['severity'])),
+  );
+}
+
+/// One step in a forecast fan chart (`forecast_json.targets[].series.points[]`).
+class GoatForecastSeriesPoint {
+  const GoatForecastSeriesPoint({
+    required this.step,
+    required this.date,
+    required this.p10,
+    required this.p50,
+    required this.p90,
+  });
+
+  final int step;
+  final DateTime? date;
+  final double? p10;
+  final double? p50;
+  final double? p90;
+
+  factory GoatForecastSeriesPoint.fromJson(Map<String, dynamic> m) =>
+      GoatForecastSeriesPoint(
+        step: _asInt(m['step']) ?? 0,
+        date: _asDateTime(_asString(m['date'])),
+        p10: _asDouble(m['p10']),
+        p50: _asDouble(m['p50']),
+        p90: _asDouble(m['p90']),
       );
 }
 
@@ -264,6 +307,8 @@ class GoatForecastTarget {
     required this.value,
     required this.reasonCodes,
     required this.entityLabel,
+    required this.seriesPoints,
+    required this.seriesUnit,
   });
   final String target;
   final String status;
@@ -274,23 +319,37 @@ class GoatForecastTarget {
   final List<String> reasonCodes;
   final String? entityLabel;
 
-  factory GoatForecastTarget.fromJson(Map<String, dynamic> m) =>
-      GoatForecastTarget(
-        target: (m['target'] ?? '') as String,
-        status: (m['status'] ?? 'ok') as String,
-        modelUsed: _asString(m['model_used']),
-        horizonDays: _asInt(m['horizon_days']),
-        confidence: _asDouble(m['confidence']),
-        value: _asMap(m['value']),
-        reasonCodes: (m['reason_codes'] as List? ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        entityLabel: _asString(m['entity_label']),
-      );
+  /// When the backend persists `series.points`, charts use this path.
+  final List<GoatForecastSeriesPoint> seriesPoints;
+  final String? seriesUnit;
+
+  factory GoatForecastTarget.fromJson(Map<String, dynamic> m) {
+    final seriesMap = _asMap(m['series']);
+    final pts = _asListOfMaps(
+      seriesMap['points'],
+    ).map(GoatForecastSeriesPoint.fromJson).toList(growable: false);
+    return GoatForecastTarget(
+      target: (m['target'] ?? '') as String,
+      status: (m['status'] ?? 'ok') as String,
+      modelUsed: _asString(m['model_used']),
+      horizonDays: _asInt(m['horizon_days']),
+      confidence: _asDouble(m['confidence']),
+      value: _asMap(m['value']),
+      reasonCodes: (m['reason_codes'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      entityLabel: _asString(m['entity_label']),
+      seriesPoints: pts,
+      seriesUnit: _asString(seriesMap['unit']),
+    );
+  }
 
   double? get p50 => _asDouble(value['p50']);
   double? get p10 => _asDouble(value['p10']);
   double? get p90 => _asDouble(value['p90']);
+
+  bool get hasChartableSeries =>
+      seriesPoints.length >= 2 && seriesPoints.any((p) => p.p50 != null);
 }
 
 class GoatAnomaly {
@@ -314,15 +373,15 @@ class GoatAnomaly {
   final DateTime? windowEnd;
 
   factory GoatAnomaly.fromJson(Map<String, dynamic> m) => GoatAnomaly(
-        kind: (m['anomaly_type'] ?? '') as String,
-        severity: severityFrom(_asString(m['severity'])),
-        explanation: _asString(m['explanation']),
-        entityType: _asString(m['entity_type']),
-        entityId: _asString(m['entity_id']),
-        baseline: _asMap(m['baseline']),
-        observation: _asMap(m['observation']),
-        windowEnd: _asDateTime(m['window_end']),
-      );
+    kind: (m['anomaly_type'] ?? '') as String,
+    severity: severityFrom(_asString(m['severity'])),
+    explanation: _asString(m['explanation']),
+    entityType: _asString(m['entity_type']),
+    entityId: _asString(m['entity_id']),
+    baseline: _asMap(m['baseline']),
+    observation: _asMap(m['observation']),
+    windowEnd: _asDateTime(m['window_end']),
+  );
 }
 
 class GoatRiskScore {
@@ -342,15 +401,15 @@ class GoatRiskScore {
   final bool dataSufficient;
 
   factory GoatRiskScore.fromJson(Map<String, dynamic> m) => GoatRiskScore(
-        target: (m['target'] ?? '') as String,
-        severity: severityFrom(_asString(m['severity'])),
-        probability: _asDouble(m['probability']),
-        reasonCodes: (m['reason_codes'] as List? ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        entityType: _asString(m['entity_type']),
-        dataSufficient: m['data_sufficient'] != false,
-      );
+    target: (m['target'] ?? '') as String,
+    severity: severityFrom(_asString(m['severity'])),
+    probability: _asDouble(m['probability']),
+    reasonCodes: (m['reason_codes'] as List? ?? const [])
+        .map((e) => e.toString())
+        .toList(),
+    entityType: _asString(m['entity_type']),
+    dataSufficient: m['data_sufficient'] != false,
+  );
 }
 
 // ─── AI envelope ────────────────────────────────────────────────────────────
@@ -368,11 +427,11 @@ class GoatAIPillar {
   final String confidenceBucket;
 
   factory GoatAIPillar.fromJson(Map<String, dynamic> m) => GoatAIPillar(
-        pillar: (m['pillar'] ?? '') as String,
-        observation: (m['observation'] ?? '') as String,
-        inference: (m['inference'] ?? '') as String,
-        confidenceBucket: (m['confidence'] ?? 'unknown') as String,
-      );
+    pillar: (m['pillar'] ?? '') as String,
+    observation: (m['observation'] ?? '') as String,
+    inference: (m['inference'] ?? '') as String,
+    confidenceBucket: (m['confidence'] ?? 'unknown') as String,
+  );
 }
 
 class GoatAIRecommendationPhrasing {
@@ -430,29 +489,29 @@ class GoatAIEnvelope {
   final bool fallbackUsed;
 
   static GoatAIEnvelope empty() => const GoatAIEnvelope(
-        narrativeSummary: '',
-        pillars: [],
-        recommendationPhrasings: [],
-        coaching: [],
-        mode: 'disabled',
-        validated: false,
-        fallbackUsed: true,
-      );
+    narrativeSummary: '',
+    pillars: [],
+    recommendationPhrasings: [],
+    coaching: [],
+    mode: 'disabled',
+    validated: false,
+    fallbackUsed: true,
+  );
 
   /// Parses the ai_layer jsonb column.
   factory GoatAIEnvelope.fromLayer(Map<String, dynamic> layer) {
     final env = _asMap(layer['envelope']);
     return GoatAIEnvelope(
       narrativeSummary: (env['narrative_summary'] ?? '') as String,
-      pillars: _asListOfMaps(env['pillars'])
-          .map(GoatAIPillar.fromJson)
-          .toList(growable: false),
-      recommendationPhrasings: _asListOfMaps(env['recommendation_phrasings'])
-          .map(GoatAIRecommendationPhrasing.fromJson)
-          .toList(growable: false),
-      coaching: _asListOfMaps(env['coaching'])
-          .map(GoatAICoachingNudge.fromJson)
-          .toList(growable: false),
+      pillars: _asListOfMaps(
+        env['pillars'],
+      ).map(GoatAIPillar.fromJson).toList(growable: false),
+      recommendationPhrasings: _asListOfMaps(
+        env['recommendation_phrasings'],
+      ).map(GoatAIRecommendationPhrasing.fromJson).toList(growable: false),
+      coaching: _asListOfMaps(
+        env['coaching'],
+      ).map(GoatAICoachingNudge.fromJson).toList(growable: false),
       mode: (layer['mode'] ?? 'disabled') as String,
       validated: layer['ai_validated'] == true,
       fallbackUsed: layer['fallback_used'] == true,
@@ -515,7 +574,8 @@ class GoatRecommendation {
   }
 
   String get defaultBody {
-    final b = recommendation['body'] ??
+    final b =
+        recommendation['body'] ??
         recommendation['message'] ??
         observation['message'];
     if (b is String && b.isNotEmpty) return b;
@@ -569,6 +629,7 @@ class GoatSnapshot {
     required this.recommendationCountsByKind,
     required this.recommendationCountsBySeverity,
     required this.layerErrors,
+    required this.charts,
   });
 
   final String id;
@@ -586,6 +647,9 @@ class GoatSnapshot {
   final Map<String, int> recommendationCountsByKind;
   final Map<String, int> recommendationCountsBySeverity;
   final Map<String, String> layerErrors;
+
+  /// Optional `summary_json.charts` — see [GoatChartBundle].
+  final GoatChartBundle? charts;
 
   bool get isPartial => snapshotStatus == 'partial';
   bool get hasMetrics => metrics.any((m) => m.value != null);
@@ -620,6 +684,8 @@ class GoatSnapshot {
       for (final e in bySevRaw.entries) e.key: _asInt(e.value) ?? 0,
     };
 
+    final charts = GoatChartBundle.tryParse(summary);
+
     return GoatSnapshot(
       id: (row['id'] ?? '') as String,
       scope: (row['scope'] ?? 'overview') as String,
@@ -628,22 +694,23 @@ class GoatSnapshot {
       generatedAt: _asDateTime(row['generated_at']),
       dataFingerprint: (row['data_fingerprint'] ?? '') as String,
       coverage: GoatCoverage.fromJson(_asMap(row['coverage_json'])),
-      metrics: _asListOfMaps(metricsJson['metrics'])
-          .map(GoatMetric.fromJson)
-          .toList(growable: false),
-      forecasts: _asListOfMaps(forecast['targets'])
-          .map(GoatForecastTarget.fromJson)
-          .toList(growable: false),
-      anomalies: _asListOfMaps(anomaliesJson['items'])
-          .map(GoatAnomaly.fromJson)
-          .toList(growable: false),
-      risks: _asListOfMaps(risk['scores'])
-          .map(GoatRiskScore.fromJson)
-          .toList(growable: false),
+      metrics: _asListOfMaps(
+        metricsJson['metrics'],
+      ).map(GoatMetric.fromJson).toList(growable: false),
+      forecasts: _asListOfMaps(
+        forecast['targets'],
+      ).map(GoatForecastTarget.fromJson).toList(growable: false),
+      anomalies: _asListOfMaps(
+        anomaliesJson['items'],
+      ).map(GoatAnomaly.fromJson).toList(growable: false),
+      risks: _asListOfMaps(
+        risk['scores'],
+      ).map(GoatRiskScore.fromJson).toList(growable: false),
       ai: GoatAIEnvelope.fromLayer(aiLayer),
       recommendationCountsByKind: byKind,
       recommendationCountsBySeverity: bySev,
       layerErrors: layerErrors,
+      charts: charts,
     );
   }
 }
@@ -669,12 +736,12 @@ class GoatJobSummary {
   final String? errorMessage;
 
   factory GoatJobSummary.fromRow(Map<String, dynamic> m) => GoatJobSummary(
-        id: (m['id'] ?? '') as String,
-        scope: (m['scope'] ?? '') as String,
-        status: (m['status'] ?? '') as String,
-        readinessLevel: _asString(m['readiness_level']),
-        createdAt: _asDateTime(m['created_at']),
-        finishedAt: _asDateTime(m['finished_at']),
-        errorMessage: _asString(m['error_message']),
-      );
+    id: (m['id'] ?? '') as String,
+    scope: (m['scope'] ?? '') as String,
+    status: (m['status'] ?? '') as String,
+    readinessLevel: _asString(m['readiness_level']),
+    createdAt: _asDateTime(m['created_at']),
+    finishedAt: _asDateTime(m['finished_at']),
+    errorMessage: _asString(m['error_message']),
+  );
 }
