@@ -43,9 +43,10 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ────────────────────── EDIT THIS LIST ──────────────────────
+# Paste Supabase Auth user UUIDs (same as public.profiles.id). One per line.
+# For a single user from the shell, prefer: .\scripts\goat\run_goat_wet_docker.ps1 -UserId '<uuid>'
 $UserIds = @(
-    # '3d8238ac-97bd-49e5-9ee7-1966447bae7c'
-    # '00000000-0000-0000-0000-000000000000'
+    # '<PASTE-YOUR-USER-UUID-HERE>'
 )
 # ────────────────────────────────────────────────────────────
 

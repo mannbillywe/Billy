@@ -55,10 +55,13 @@ Works fine, but bypasses the audit ledger. Prefer 2a for anything real.
 
 The analytics backend is the one at `C:\Users\mannt\Downloads\backend` (Docker). `C:\Users\mannt\Desktop\billy_con\backend` is intentionally ignored.
 
-Script: `scripts/goat/run_goat_backend_docker.ps1`.
+Scripts:
+
+- **Batch (edit `$UserIds` in file):** `scripts/goat/run_goat_backend_docker.ps1`
+- **Single UUID from CLI:** `scripts/goat/run_goat_wet_docker.ps1 -UserId '<uuid>'` (see §7)
 
 ```powershell
-# 1. Paste UUID(s) into the $UserIds array in the script.
+# 1. Paste UUID(s) into the $UserIds array in run_goat_backend_docker.ps1, or use run_goat_wet_docker.ps1.
 # 2. Make sure C:\Users\mannt\Downloads\backend\app\.env has SUPABASE_URL and
 #    SUPABASE_SERVICE_ROLE_KEY (the service role — not the anon key).
 # 3. Run it:
@@ -132,7 +135,49 @@ Graceful states:
 
 ---
 
-## 6. What I assumed about the schema
+## 6. Flutter web build + Vercel deploy
+
+From the **billy_con** repo root (same layout as CI):
+
+```powershell
+cd C:\Users\mannt\Desktop\billy_con
+.\scripts\deploy_web_vercel.ps1
+```
+
+Optional: bake a specific Supabase project into the web bundle (overrides embedded defaults):
+
+```powershell
+$env:SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co'
+$env:SUPABASE_ANON_KEY = 'eyJ...anon...'
+.\scripts\deploy_web_vercel.ps1
+```
+
+Prerequisites: Node.js for `npx vercel`, Flutter on `PATH`, and a one-time `vercel login` (or `VERCEL_TOKEN` in the environment). The script copies `web/vercel.json` and `web/api/*` into `build/web` before deploy (SPA rewrites + serverless routes).
+
+---
+
+## 7. One-command GOAT Docker wet run (single UUID)
+
+Use this when you want to paste **one** UUID on the command line (backend stays under **Downloads**, not `billy_con\backend`):
+
+```powershell
+cd C:\Users\mannt\Desktop\billy_con
+.\scripts\goat\run_goat_wet_docker.ps1 -UserId '<PASTE-YOUR-USER-UUID-HERE>'
+```
+
+Rebuild the image only when Python deps or code change: add `-SkipBuild` after the first successful build.
+
+Raw Docker equivalent (same image, same wet run):
+
+```powershell
+docker build -t billy-goat-backend:latest C:\Users\mannt\Downloads\backend
+docker run --rm --env-file C:\Users\mannt\Downloads\backend\app\.env billy-goat-backend:latest `
+  python -m goat.cli run --user-id <PASTE-YOUR-USER-UUID-HERE> --scope full --pretty
+```
+
+---
+
+## 8. What I assumed about the schema
 
 - `goat_mode_snapshots` has the JSONB columns documented in `docs/GOAT_MODE_INTEGRATION_GUIDE.md` §5 (`metrics_json`, `forecast_json`, `anomalies_json`, `risk_json`, `ai_layer`, `summary_json`, `coverage_json`, `recommendations_summary_json`). The model parser is forgiving and tolerates missing keys.
 - `goat_mode_recommendations` has `status` in `('open','snoozed','dismissed','resolved','expired')` and exposes `recommendation_json` + `observation_json` JSONB blobs.
