@@ -37,3 +37,11 @@ final goatOpenRecommendationsProvider =
   if (!hasAccess) return const [];
   return GoatModeService.fetchOpenRecommendations();
 });
+
+/// Backend compute history (read-only audit of `goat_mode_jobs`).
+final goatRecentJobsProvider =
+    FutureProvider.autoDispose<List<GoatJobSummary>>((ref) async {
+  final hasAccess = ref.watch(goatModeAccessProvider);
+  if (!hasAccess) return const [];
+  return GoatModeService.fetchRecentJobs();
+});

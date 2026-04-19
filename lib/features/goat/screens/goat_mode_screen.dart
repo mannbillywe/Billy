@@ -6,17 +6,46 @@ import '../models/goat_models.dart';
 import '../providers/goat_inputs_providers.dart';
 import '../providers/goat_providers.dart';
 import '../services/goat_mode_service.dart';
-import '../widgets/goat_sections.dart';
+import '../widgets/goat_mode_tab_pages.dart';
 import 'goat_setup_screen.dart';
 
-/// The one and only GOAT Mode screen. 100% read-only: everything on this
-/// surface is computed by the backend and persisted into Supabase. The user
-/// cannot trigger a run from here.
-class GoatModeScreen extends ConsumerWidget {
+/// GOAT Mode dashboard: read-only views of backend-written snapshots. Organized
+/// into tabs so each concern (overview, actions, trends, safety, run log) has
+/// its own page instead of one endless scroll.
+class GoatModeScreen extends ConsumerStatefulWidget {
   const GoatModeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GoatModeScreen> createState() => _GoatModeScreenState();
+}
+
+class _GoatModeScreenState extends ConsumerState<GoatModeScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 5, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onRefresh() async {
+    ref.invalidate(goatLatestSnapshotProvider);
+    ref.invalidate(goatPreviousSnapshotProvider);
+    ref.invalidate(goatOpenRecommendationsProvider);
+    ref.invalidate(goatUserInputsProvider);
+    ref.invalidate(goatRecentJobsProvider);
+    await ref.read(goatLatestSnapshotProvider.future);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final snapAsync = ref.watch(goatLatestSnapshotProvider);
     final prevAsync = ref.watch(goatPreviousSnapshotProvider);
     final recsAsync = ref.watch(goatOpenRecommendationsProvider);
@@ -24,148 +53,186 @@ class GoatModeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: BillyTheme.scaffoldBg,
-      body: RefreshIndicator(
-        color: BillyTheme.emerald600,
-        onRefresh: () async {
-          ref.invalidate(goatLatestSnapshotProvider);
-          ref.invalidate(goatPreviousSnapshotProvider);
-          ref.invalidate(goatOpenRecommendationsProvider);
-          ref.invalidate(goatUserInputsProvider);
-          await ref.read(goatLatestSnapshotProvider.future);
-        },
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics()),
-          slivers: [
-            SliverAppBar(
-              backgroundColor: BillyTheme.scaffoldBg,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              pinned: false,
-              leading: IconButton(
-                icon: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: BillyTheme.gray100),
-                  ),
-                  child: const Icon(Icons.arrow_back_ios_new,
-                      size: 14, color: BillyTheme.gray800),
-                ),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-              title: const Text(
-                'GOAT Mode',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: BillyTheme.gray800,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              centerTitle: false,
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: IconButton(
-                    tooltip: 'Setup',
-                    icon: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: BillyTheme.gray100),
-                      ),
-                      child: const Icon(Icons.tune_rounded,
-                          size: 18, color: BillyTheme.gray700),
-                    ),
-                    onPressed: () => _openSetup(context),
-                  ),
-                ),
-              ],
-            ),
-            if (!setupDone)
-              SliverToBoxAdapter(
-                child: _SetupBanner(onTap: () => _openSetup(context)),
-              ),
-            ..._buildBody(
-              context,
-              ref,
-              snapAsync: snapAsync,
-              prevAsync: prevAsync,
-              recsAsync: recsAsync,
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 48)),
-          ],
+      body: snapAsync.when(
+        loading: () => RefreshIndicator(
+          color: BillyTheme.emerald600,
+          onRefresh: _onRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [
+              SizedBox(height: 120),
+              Center(child: _GoatLoading()),
+            ],
+          ),
         ),
+        error: (e, _) => RefreshIndicator(
+          color: BillyTheme.emerald600,
+          onRefresh: _onRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              const SizedBox(height: 80),
+              _GoatError(error: e.toString()),
+            ],
+          ),
+        ),
+        data: (snapshot) {
+          if (snapshot == null || !snapshot.hasMetrics) {
+            return RefreshIndicator(
+              color: BillyTheme.emerald600,
+              onRefresh: _onRefresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  _header(context, setupDone: setupDone, showTabs: false),
+                  _GoatEmpty(onSetup: () => _openSetup(context)),
+                ],
+              ),
+            );
+          }
+
+          final previous = prevAsync.valueOrNull;
+          final recs = recsAsync.valueOrNull ?? const <GoatRecommendation>[];
+          final priorityAnomalyEntities = <String>{
+            for (final r in recs)
+              if (r.kind == 'anomaly_review' && (r.entityId ?? '').isNotEmpty)
+                r.entityId!,
+          };
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(context, setupDone: setupDone, showTabs: true),
+              Material(
+                color: BillyTheme.scaffoldBg,
+                child: TabBar(
+                  controller: _tabs,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: BillyTheme.emerald700,
+                  unselectedLabelColor: BillyTheme.gray500,
+                  indicatorColor: BillyTheme.emerald600,
+                  labelStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Overview'),
+                    Tab(text: 'Actions'),
+                    Tab(text: 'Trends'),
+                    Tab(text: 'Safety'),
+                    Tab(text: 'Run log'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: [
+                    GoatOverviewTab(
+                      snapshot: snapshot,
+                      previous: previous,
+                      onRefresh: _onRefresh,
+                    ),
+                    GoatActionsTab(
+                      snapshot: snapshot,
+                      recommendations: recs,
+                      onDismiss: (rec) => _handleDismiss(context, rec),
+                      onRefresh: _onRefresh,
+                    ),
+                    GoatTrendsTab(
+                      snapshot: snapshot,
+                      onRefresh: _onRefresh,
+                    ),
+                    GoatSafetyTab(
+                      snapshot: snapshot,
+                      priorityAnomalyEntities: priorityAnomalyEntities,
+                      onRefresh: _onRefresh,
+                    ),
+                    GoatRunLogTab(
+                      snapshot: snapshot,
+                      onRefresh: _onRefresh,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  List<Widget> _buildBody(
-    BuildContext context,
-    WidgetRef ref, {
-    required AsyncValue<GoatSnapshot?> snapAsync,
-    required AsyncValue<GoatSnapshot?> prevAsync,
-    required AsyncValue<List<GoatRecommendation>> recsAsync,
+  Widget _header(
+    BuildContext context, {
+    required bool setupDone,
+    required bool showTabs,
   }) {
-    return snapAsync.when(
-      loading: () => [const SliverToBoxAdapter(child: _GoatLoading())],
-      error: (e, _) =>
-          [SliverToBoxAdapter(child: _GoatError(error: e.toString()))],
-      data: (snapshot) {
-        if (snapshot == null || !snapshot.hasMetrics) {
-          return [
-            SliverToBoxAdapter(
-              child: _GoatEmpty(onSetup: () => _openSetup(context)),
+    return Material(
+      color: BillyTheme.scaffoldBg,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(8, MediaQuery.paddingOf(context).top, 8, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: BillyTheme.gray100),
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new,
+                        size: 14, color: BillyTheme.gray800),
+                  ),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+                const Expanded(
+                  child: Text(
+                    'GOAT Mode',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: BillyTheme.gray800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Setup',
+                  icon: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: BillyTheme.gray100),
+                    ),
+                    child: const Icon(Icons.tune_rounded,
+                        size: 18, color: BillyTheme.gray700),
+                  ),
+                  onPressed: () => _openSetup(context),
+                ),
+              ],
             ),
-          ];
-        }
-        final previous = prevAsync.valueOrNull;
-        final recs = recsAsync.valueOrNull ?? const <GoatRecommendation>[];
-
-        return [
-          SliverToBoxAdapter(
-            child: GoatHeroCard(snapshot: snapshot, previous: previous),
-          ),
-          SliverToBoxAdapter(
-            child: GoatScoreRow(snapshot: snapshot, previous: previous),
-          ),
-          if (recs.isNotEmpty)
-            SliverToBoxAdapter(
-              child: GoatPrioritySection(
-                recommendations: recs,
-                aiPhrasings: snapshot.ai.recommendationPhrasings,
-                onDismiss: (rec) =>
-                    _handleDismiss(context, ref, rec),
+            if (!setupDone)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: _SetupBanner(onTap: () => _openSetup(context)),
               ),
-            ),
-          if (snapshot.ai.pillars.isNotEmpty)
-            SliverToBoxAdapter(child: GoatInsightsSection(snapshot: snapshot)),
-          if (snapshot.forecasts.isNotEmpty)
-            SliverToBoxAdapter(child: GoatForecastSection(snapshot: snapshot)),
-          if (_hasWatchouts(snapshot))
-            SliverToBoxAdapter(
-                child: GoatWatchoutsSection(snapshot: snapshot)),
-          if (snapshot.ai.coaching.isNotEmpty)
-            SliverToBoxAdapter(child: GoatCoachingSection(snapshot: snapshot)),
-          if (snapshot.coverage.missingInputs.isNotEmpty)
-            SliverToBoxAdapter(
-                child: GoatMissingInputsSection(snapshot: snapshot)),
-          SliverToBoxAdapter(child: GoatFooterMeta(snapshot: snapshot)),
-        ];
-      },
+            if (!showTabs) const SizedBox(height: 4),
+          ],
+        ),
+      ),
     );
-  }
-
-  bool _hasWatchouts(GoatSnapshot s) {
-    return s.anomalies.isNotEmpty ||
-        s.risks.any((r) =>
-            r.severity == GoatSeverity.warn ||
-            r.severity == GoatSeverity.critical);
   }
 
   void _openSetup(BuildContext context) {
@@ -176,7 +243,6 @@ class GoatModeScreen extends ConsumerWidget {
 
   Future<void> _handleDismiss(
     BuildContext context,
-    WidgetRef ref,
     GoatRecommendation rec,
   ) async {
     try {
@@ -213,67 +279,64 @@ class _SetupBanner extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [BillyTheme.emerald50, Colors.white],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [BillyTheme.emerald50, Colors.white],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: BillyTheme.emerald100),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: BillyTheme.emerald100),
+                ),
+                child: const Icon(Icons.tune_rounded,
+                    color: BillyTheme.emerald700, size: 18),
               ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: BillyTheme.emerald100),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(color: BillyTheme.emerald100),
-                  ),
-                  child: const Icon(Icons.tune_rounded,
-                      color: BillyTheme.emerald700, size: 18),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Finish your GOAT setup',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: BillyTheme.gray800,
-                        ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Finish your GOAT setup',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: BillyTheme.gray800,
                       ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Add income, goals & obligations so the next analysis is rich.',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: BillyTheme.gray500,
-                          height: 1.35,
-                        ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Add income, goals & obligations so the next analysis is rich.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: BillyTheme.gray500,
+                        height: 1.35,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                const Icon(Icons.chevron_right_rounded,
-                    color: BillyTheme.emerald700),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right_rounded,
+                  color: BillyTheme.emerald700),
+            ],
           ),
         ),
       ),

@@ -86,8 +86,21 @@ Run this monthly (or ad-hoc after onboarding a new user) from a box with Docker 
 | Models (read-only) | `lib/features/goat/models/goat_models.dart` |
 | Supabase read service | `lib/features/goat/services/goat_mode_service.dart` |
 | Riverpod providers | `lib/features/goat/providers/goat_providers.dart` |
-| Screen | `lib/features/goat/screens/goat_mode_screen.dart` |
+| Dashboard (tabs) | `lib/features/goat/screens/goat_mode_screen.dart` |
+| Tab bodies | `lib/features/goat/widgets/goat_mode_tab_pages.dart` |
 | Section widgets | `lib/features/goat/widgets/goat_sections.dart` |
+
+**Sample CLI / API shape** (trimmed): `docs/samples/goat_cli_run_response.sample.json` — mirrors what `python -m goat.cli run --pretty` prints and what gets folded into `goat_mode_snapshots` JSONB columns.
+
+### Dashboard tabs (v2 layout)
+
+| Tab | What it shows |
+|---|---|
+| **Overview** | Hero, coverage/score row, metric highlights, AI pillars (when enabled). |
+| **Actions** | Open recommendations, unlockable scopes from coverage, missing inputs, coaching nudges. |
+| **Trends** | Forecast targets (`forecast_json.targets`). |
+| **Safety** | Risk + anomaly watchouts (deduped vs priority recs). |
+| **Run log** | Footer metadata, recommendation counts by severity/kind, `layer_errors` from `summary_json`, recent rows from `goat_mode_jobs`. |
 
 Flow:
 
@@ -97,7 +110,8 @@ Flow:
    - `goatLatestSnapshotProvider` — most recent `goat_mode_snapshots` row (prefers scope `full`).
    - `goatPreviousSnapshotProvider` — second-most-recent, same scope, for "vs last run" comparisons.
    - `goatOpenRecommendationsProvider` — `goat_mode_recommendations` where `status in ('open','snoozed')`.
-4. The screen renders sections only when data exists (hero + coverage / score row are always shown if the snapshot has any metric; the rest are conditional).
+   - `goatRecentJobsProvider` — recent `goat_mode_jobs` for the Run log tab.
+4. Each tab renders only what belongs there; empty tabs show a short explanation instead of a blank page.
 5. Pull-to-refresh re-fetches. Dismiss on a priority card flips `status = 'dismissed'` via RLS-safe update.
 
 Graceful states:

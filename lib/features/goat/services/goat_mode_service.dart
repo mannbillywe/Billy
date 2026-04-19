@@ -108,6 +108,33 @@ class GoatModeService {
 
   /// Dismiss / snooze / resolve a recommendation. RLS only allows status
   /// updates on the user's own rows.
+  /// Recent backend job rows (newest first). Empty when table missing or offline.
+  static Future<List<GoatJobSummary>> fetchRecentJobs({int limit = 12}) async {
+    final uid = _uid;
+    if (uid == null) return const [];
+    try {
+      final rows = await _client
+          .from('goat_mode_jobs')
+          .select(
+            'id, scope, status, readiness_level, created_at, finished_at, error_message',
+          )
+          .eq('user_id', uid)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return rows
+          .whereType<dynamic>()
+          .map((r) =>
+              GoatJobSummary.fromRow(Map<String, dynamic>.from(r as Map)))
+          .toList(growable: false);
+    } on PostgrestException catch (e) {
+      if (kDebugMode) debugPrint('[GOAT] jobs fetch failed: $e');
+      if (e.code == '42P01') return const [];
+    } catch (e) {
+      if (kDebugMode) debugPrint('[GOAT] jobs fetch error: $e');
+    }
+    return const [];
+  }
+
   static Future<void> updateRecommendationStatus(
     String id, {
     required String status,

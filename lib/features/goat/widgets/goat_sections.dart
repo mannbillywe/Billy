@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/billy_theme.dart';
 import '../models/goat_models.dart';
+import 'goat_humanize.dart';
 
 // ─── shared colors for severity ────────────────────────────────────────────
 
@@ -54,8 +55,15 @@ class GoatHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final narrative = snapshot.ai.narrativeSummary.trim();
-    final hasNarrative = narrative.isNotEmpty;
+    final rawNarrative = snapshot.ai.narrativeSummary.trim();
+    // The deterministic fallback narrative contains strings like "scope=full"
+    // and "deterministic fallback phrasing" — treat it as absent and use a
+    // computed headline instead.
+    final looksLikeFallback = rawNarrative.contains('deterministic fallback') ||
+        rawNarrative.contains('scope=') ||
+        rawNarrative.contains('readiness L');
+    final hasNarrative = rawNarrative.isNotEmpty && !looksLikeFallback;
+    final narrative = hasNarrative ? rawNarrative : '';
     final generatedLabel = _relativeTime(snapshot.generatedAt);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
@@ -205,8 +213,15 @@ class GoatHeroCard extends StatelessWidget {
     if (mtd?.value is num) {
       bits.add('MTD spend ${_money(mtd!.value as num, mtd.unit)}');
     }
+    final openRecs =
+        s.recommendationCountsByKind.values.fold<int>(0, (a, b) => a + b);
+    if (openRecs > 0) {
+      bits.add(openRecs == 1
+          ? '1 priority to review'
+          : '$openRecs priorities to review');
+    }
     if (bits.isEmpty) {
-      return 'Your latest analysis is ready. Scroll for priorities, forecasts, and insights.';
+      return 'Billy scanned your transactions, budgets, and goals. Scroll for priorities, forecasts, and insights.';
     }
     return '${bits.join(' · ')}. Scroll for the full picture.';
   }
@@ -342,14 +357,15 @@ class _StatCard extends StatelessWidget {
           Text(
             primary,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
               color: BillyTheme.gray800,
-              height: 1.1,
+              height: 1.15,
               letterSpacing: -0.2,
             ),
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
+            softWrap: true,
           ),
           const SizedBox(height: 2),
           Text(
@@ -398,8 +414,18 @@ class GoatPrioritySection extends StatelessWidget {
     final phrasingByFp = {
       for (final p in aiPhrasings) p.recFingerprint: p,
     };
+    // Collapse recs that share the same fingerprint/kind-entity so we don't
+    // show three copies of the same "Category spike" card.
+    final seen = <String>{};
+    final deduped = <GoatRecommendation>[];
+    for (final r in recommendations) {
+      final key = r.recFingerprint.isNotEmpty
+          ? r.recFingerprint
+          : '${r.kind}|${r.entityId ?? ''}';
+      if (seen.add(key)) deduped.add(r);
+    }
     // Sort: severity first (critical→info), then priority.
-    final sorted = [...recommendations]
+    final sorted = [...deduped]
       ..sort((a, b) {
         final s = b.severity.rank.compareTo(a.severity.rank);
         if (s != 0) return s;
@@ -454,13 +480,12 @@ class _PriorityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = _SeverityColors.of(rec.severity);
-    final title = phrasing?.title.isNotEmpty == true
-        ? phrasing!.title
-        : rec.defaultTitle;
-    final body = phrasing?.body.isNotEmpty == true
-        ? phrasing!.body
-        : rec.defaultBody;
-    final why = phrasing?.whyShown ?? '';
+    final title = bestRecTitle(rec, phrasing);
+    final body = bestRecBody(rec, phrasing);
+    final rawWhy = phrasing?.whyShown ?? '';
+    // Hide the canned deterministic "why_shown" line — it adds noise without
+    // explaining anything specific to the recommendation.
+    final why = isAiPlaceholderWhy(rawWhy) ? '' : rawWhy;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -615,6 +640,16 @@ class GoatInsightsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rewrite synthetic (fallback) pillars into something user-facing, and
+    // drop any that would still show internal metadata (metric keys, model
+    // names, method names).
+    final cleaned = <GoatAIPillar>[];
+    for (final p in snapshot.ai.pillars) {
+      final next = isSyntheticPillar(p) ? rewriteSyntheticPillar(p, snapshot) : p;
+      if (isSyntheticPillar(next)) continue;
+      cleaned.add(next);
+    }
+    if (cleaned.isEmpty) return const SizedBox.shrink();
     return _SectionShell(
       kicker: 'KEY INSIGHTS',
       title: 'What the numbers are telling us',
@@ -622,7 +657,7 @@ class GoatInsightsSection extends StatelessWidget {
           'Grounded observations from your data, explained in plain English.',
       child: Column(
         children: [
-          for (final p in snapshot.ai.pillars.take(6))
+          for (final p in cleaned.take(6))
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _InsightCard(pillar: p),
@@ -736,7 +771,7 @@ String _pillarLabel(String key) {
     case 'forecast':
       return 'Forecast';
     case 'anomaly':
-      return 'Anomaly';
+      return 'Pattern';
     case 'risk':
       return 'Risk';
     default:
@@ -756,11 +791,17 @@ class GoatForecastSection extends StatelessWidget {
         .where((f) => f.status == 'ok' && f.p50 != null)
         .toList(growable: false);
     if (forecasts.isEmpty) return const SizedBox.shrink();
+    final maxHorizon = forecasts
+        .map((f) => f.horizonDays ?? 0)
+        .fold<int>(0, (a, b) => a > b ? a : b);
+    final horizonLabel =
+        maxHorizon > 0 ? 'the next $maxHorizon days' : 'the coming period';
 
     return _SectionShell(
       kicker: 'FORECAST',
-      title: 'Where the next 30 days are heading',
-      subtitle: 'Projected ranges with low/high bounds so you can plan.',
+      title: 'Where spending is heading',
+      subtitle:
+          'Projected ranges for $horizonLabel — use the band as a planning range, not a promise.',
       child: Column(
         children: [
           for (final f in forecasts.take(4))
@@ -807,7 +848,7 @@ class _ForecastCard extends StatelessWidget {
                 ),
               ),
               Text(
-                (target.modelUsed ?? 'model').replaceAll('_', ' '),
+                _forecastModelLabel(target),
                 style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -817,6 +858,17 @@ class _ForecastCard extends StatelessWidget {
               ),
             ],
           ),
+          if (target.horizonDays != null && target.horizonDays! > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Window · next ${target.horizonDays} days',
+              style: const TextStyle(
+                fontSize: 11,
+                color: BillyTheme.gray500,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           if (p50 != null)
             Text(
@@ -896,6 +948,11 @@ class _RangeBar extends StatelessWidget {
   }
 }
 
+String _forecastModelLabel(GoatForecastTarget t) {
+  final raw = (t.modelUsed ?? 'statistical blend').replaceAll('_', ' ');
+  return raw.length <= 24 ? raw : '${raw.substring(0, 21)}…';
+}
+
 String _targetLabel(String key) {
   switch (key) {
     case 'short_horizon_spend_7d':
@@ -915,11 +972,108 @@ String _targetLabel(String key) {
   }
 }
 
+// ─── at-a-glance metrics (deterministic layer) ─────────────────────────────
+
+class GoatMetricHighlights extends StatelessWidget {
+  const GoatMetricHighlights({super.key, required this.snapshot});
+  final GoatSnapshot snapshot;
+
+  static const _items = <(String key, String label)>[
+    ('net_worth', 'Net worth'),
+    ('month_to_date_spend', 'Month to date'),
+    ('daily_spend_avg', 'Daily avg spend'),
+    ('savings_rate', 'Savings rate'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <({String label, String value})>[];
+    for (final (key, label) in _items) {
+      final m = snapshot.metricByKey(key);
+      final v = m?.value;
+      if (v == null) continue;
+      if (v is! num) continue;
+      final formatted = key == 'savings_rate'
+          ? '${(v * 100).round()}%'
+          : _money(v, m?.unit);
+      chips.add((label: label, value: formatted));
+    }
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'AT A GLANCE',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: BillyTheme.gray400,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final c in chips)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: BillyTheme.gray100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        c.label.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: BillyTheme.gray400,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        c.value,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: BillyTheme.gray800,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── watchouts (anomalies + risks) ─────────────────────────────────────────
 
 class GoatWatchoutsSection extends StatelessWidget {
-  const GoatWatchoutsSection({super.key, required this.snapshot});
+  const GoatWatchoutsSection({
+    super.key,
+    required this.snapshot,
+    this.anomalyEntityIdsInPriorities = const {},
+  });
+
   final GoatSnapshot snapshot;
+  /// Entity IDs already shown as priority cards — hide duplicate anomaly rows.
+  final Set<String> anomalyEntityIdsInPriorities;
 
   @override
   Widget build(BuildContext context) {
@@ -928,10 +1082,29 @@ class GoatWatchoutsSection extends StatelessWidget {
             r.severity == GoatSeverity.warn ||
             r.severity == GoatSeverity.critical)
         .toList(growable: false);
-    final anomalies = snapshot.anomalies
-        .where((a) => a.severity.rank >= GoatSeverity.watch.rank)
-        .toList(growable: false)
-      ..sort((a, b) => b.severity.rank.compareTo(a.severity.rank));
+    // Collapse duplicate anomalies (same kind + same entity) and keep the most
+    // severe representative of each cluster.
+    var anomalies = dedupeAnomalies(
+      snapshot.anomalies
+          .where((a) => a.severity.rank >= GoatSeverity.watch.rank)
+          .toList(growable: false),
+    );
+    if (anomalyEntityIdsInPriorities.isNotEmpty) {
+      anomalies = anomalies
+          .where((a) {
+            final id = a.entityId;
+            if (id == null || id.isEmpty) return true;
+            return !anomalyEntityIdsInPriorities.contains(id);
+          })
+          .toList(growable: false);
+    }
+
+    // Nothing worth showing? Hide the whole block rather than rendering an
+    // empty section header.
+    if (risks.isEmpty && anomalies.isEmpty) return const SizedBox.shrink();
+
+    // Count how many anomaly clusters we dropped so we can hint at the total.
+    final extra = anomalies.length > 6 ? anomalies.length - 6 : 0;
 
     return _SectionShell(
       kicker: 'WATCHOUTS',
@@ -946,7 +1119,7 @@ class GoatWatchoutsSection extends StatelessWidget {
                 icon: Icons.shield_moon_rounded,
                 severity: r.severity,
                 title: _riskLabel(r.target),
-                body: _riskBody(r),
+                body: humanRiskBody(r),
               ),
             ),
           for (final a in anomalies.take(6))
@@ -956,7 +1129,19 @@ class GoatWatchoutsSection extends StatelessWidget {
                 icon: Icons.insights_rounded,
                 severity: a.severity,
                 title: _anomalyTitle(a.kind),
-                body: a.explanation ?? '',
+                body: humanAnomalyBody(a),
+              ),
+            ),
+          if (extra > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                '$extra more similar flag(s) grouped behind the scenes',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: BillyTheme.gray500,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
         ],
@@ -981,26 +1166,20 @@ class GoatWatchoutsSection extends StatelessWidget {
     }
   }
 
-  String _riskBody(GoatRiskScore r) {
-    if (r.probability == null) return '';
-    final pct = (r.probability! * 100).round();
-    return '$pct% likely this cycle. ${r.reasonCodes.isNotEmpty ? 'Drivers: ${r.reasonCodes.join(', ')}' : ''}';
-  }
-
   String _anomalyTitle(String kind) {
     switch (kind) {
       case 'amount_spike_category':
-        return 'Category spike';
+        return 'Unusually large charge';
       case 'recurring_bill_jump':
         return 'Recurring bill jumped';
       case 'budget_pace_acceleration':
         return 'Budget pace accelerating';
       case 'low_liquidity_pattern':
-        return 'Low-liquidity pattern';
+        return 'Low cash buffer';
       case 'duplicate_like_pattern':
-        return 'Possible duplicate pattern';
+        return 'Possible duplicate charges';
       case 'noisy_import_cluster':
-        return 'Noisy import cluster';
+        return 'Noisy import batch';
       case 'isolation_outlier':
         return 'Outlier transaction';
       default:
@@ -1159,7 +1338,7 @@ class _CoachingCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  nudge.topic,
+                  humanizeCoachingTopic(nudge.topic),
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -1283,11 +1462,7 @@ class GoatFooterMeta extends StatelessWidget {
         'Generated ${_relativeTime(snapshot.generatedAt)}',
       'Scope: ${snapshot.scope}',
       if (snapshot.isPartial) 'Partial snapshot',
-      if (snapshot.ai.mode == 'real' && snapshot.ai.validated)
-        'AI narrative validated',
-      if (snapshot.ai.mode == 'real' && !snapshot.ai.validated)
-        'AI narrative unvalidated',
-      if (snapshot.ai.mode == 'disabled') 'Deterministic-only',
+      footerAiStatusLabel(snapshot.ai),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),

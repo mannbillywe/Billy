@@ -153,6 +153,8 @@ class GoatMetric {
     required this.confidence,
     required this.confidenceBucket,
     required this.reasonCodes,
+    required this.inputsUsed,
+    required this.inputsMissing,
     required this.detail,
   });
 
@@ -162,6 +164,10 @@ class GoatMetric {
   final double? confidence;
   final String confidenceBucket;
   final List<String> reasonCodes;
+  /// Declared data sources the metric consumed (backend `Metric.inputs_used`).
+  final List<String> inputsUsed;
+  /// Missing inputs that capped confidence (backend `Metric.inputs_missing`).
+  final List<String> inputsMissing;
   final Map<String, dynamic> detail;
 
   factory GoatMetric.fromJson(Map<String, dynamic> m) => GoatMetric(
@@ -172,6 +178,12 @@ class GoatMetric {
         confidenceBucket: (m['confidence_bucket'] ?? 'unknown') as String,
         reasonCodes:
             (m['reason_codes'] as List? ?? const []).map((e) => e.toString()).toList(),
+        inputsUsed: (m['inputs_used'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        inputsMissing: (m['inputs_missing'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
         detail: _asMap(m['detail']),
       );
 }
@@ -182,12 +194,16 @@ class GoatCoverage {
     required this.readiness,
     required this.breakdown,
     required this.missingInputs,
+    required this.inputsUsed,
+    required this.unlockableScopes,
   });
 
   final double score; // 0..1
   final GoatReadiness readiness;
   final Map<String, double> breakdown;
   final List<GoatMissingInput> missingInputs;
+  final List<String> inputsUsed;
+  final List<String> unlockableScopes;
 
   factory GoatCoverage.fromJson(Map<String, dynamic> m) {
     final breakdownRaw = _asMap(m['breakdown']);
@@ -202,6 +218,12 @@ class GoatCoverage {
       missingInputs: _asListOfMaps(m['missing_inputs'])
           .map(GoatMissingInput.fromJson)
           .toList(growable: false),
+      inputsUsed: (m['inputs_used'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      unlockableScopes: (m['unlockable_scopes'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
     );
   }
 }
@@ -545,6 +567,7 @@ class GoatSnapshot {
     required this.risks,
     required this.ai,
     required this.recommendationCountsByKind,
+    required this.recommendationCountsBySeverity,
     required this.layerErrors,
   });
 
@@ -561,6 +584,7 @@ class GoatSnapshot {
   final List<GoatRiskScore> risks;
   final GoatAIEnvelope ai;
   final Map<String, int> recommendationCountsByKind;
+  final Map<String, int> recommendationCountsBySeverity;
   final Map<String, String> layerErrors;
 
   bool get isPartial => snapshotStatus == 'partial';
@@ -591,6 +615,10 @@ class GoatSnapshot {
     final byKind = <String, int>{
       for (final e in byKindRaw.entries) e.key: _asInt(e.value) ?? 0,
     };
+    final bySevRaw = _asMap(recsSummary['by_severity']);
+    final bySev = <String, int>{
+      for (final e in bySevRaw.entries) e.key: _asInt(e.value) ?? 0,
+    };
 
     return GoatSnapshot(
       id: (row['id'] ?? '') as String,
@@ -614,7 +642,39 @@ class GoatSnapshot {
           .toList(growable: false),
       ai: GoatAIEnvelope.fromLayer(aiLayer),
       recommendationCountsByKind: byKind,
+      recommendationCountsBySeverity: bySev,
       layerErrors: layerErrors,
     );
   }
+}
+
+/// Latest compute jobs for the current user (backend writes; app is read-only).
+class GoatJobSummary {
+  const GoatJobSummary({
+    required this.id,
+    required this.scope,
+    required this.status,
+    required this.readinessLevel,
+    required this.createdAt,
+    required this.finishedAt,
+    required this.errorMessage,
+  });
+
+  final String id;
+  final String scope;
+  final String status;
+  final String? readinessLevel;
+  final DateTime? createdAt;
+  final DateTime? finishedAt;
+  final String? errorMessage;
+
+  factory GoatJobSummary.fromRow(Map<String, dynamic> m) => GoatJobSummary(
+        id: (m['id'] ?? '') as String,
+        scope: (m['scope'] ?? '') as String,
+        status: (m['status'] ?? '') as String,
+        readinessLevel: _asString(m['readiness_level']),
+        createdAt: _asDateTime(m['created_at']),
+        finishedAt: _asDateTime(m['finished_at']),
+        errorMessage: _asString(m['error_message']),
+      );
 }
