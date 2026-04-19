@@ -103,30 +103,66 @@ class _GoatModeScreenState extends ConsumerState<GoatModeScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _header(context, setupDone: setupDone, showTabs: true),
-              Material(
-                color: BillyTheme.scaffoldBg,
-                child: TabBar(
-                  controller: _tabs,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelColor: BillyTheme.emerald700,
-                  unselectedLabelColor: BillyTheme.gray500,
-                  indicatorColor: BillyTheme.emerald600,
-                  labelStyle: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 0,
+                  shadowColor: Colors.black12,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: BillyTheme.gray100),
                   ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+                  child: TabBar(
+                    controller: _tabs,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    dividerColor: Colors.transparent,
+                    splashBorderRadius: BorderRadius.circular(12),
+                    labelColor: BillyTheme.emerald700,
+                    unselectedLabelColor: BillyTheme.gray400,
+                    indicator: BoxDecoration(
+                      color: BillyTheme.emerald50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    labelStyle: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    tabs: const [
+                      Tab(
+                        height: 52,
+                        icon: Icon(Icons.grid_view_rounded, size: 20),
+                        text: 'Home',
+                      ),
+                      Tab(
+                        height: 52,
+                        icon: Icon(Icons.checklist_rounded, size: 20),
+                        text: 'To-do',
+                      ),
+                      Tab(
+                        height: 52,
+                        icon: Icon(Icons.show_chart_rounded, size: 20),
+                        text: 'Trends',
+                      ),
+                      Tab(
+                        height: 52,
+                        icon: Icon(Icons.shield_rounded, size: 20),
+                        text: 'Safety',
+                      ),
+                      Tab(
+                        height: 52,
+                        icon: Icon(Icons.info_outline_rounded, size: 20),
+                        text: 'Run',
+                      ),
+                    ],
                   ),
-                  tabs: const [
-                    Tab(text: 'Overview'),
-                    Tab(text: 'Actions'),
-                    Tab(text: 'Trends'),
-                    Tab(text: 'Safety'),
-                    Tab(text: 'Run log'),
-                  ],
                 ),
               ),
               Expanded(
@@ -323,7 +359,7 @@ class _SetupBanner extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Add income, goals & obligations so the next analysis is rich.',
+                      'Income & goals help the next run go deeper.',
                       style: TextStyle(
                         fontSize: 11.5,
                         color: BillyTheme.gray500,
@@ -422,7 +458,7 @@ class _GoatEmpty extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             const Text(
-              'Your first analysis is on the way',
+              'Analysis on the way',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -433,14 +469,13 @@ class _GoatEmpty extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              'GOAT Mode analyses are prepared in the background. As soon as your '
-              'snapshot lands, this screen will light up with insights, forecasts, '
-              'watchouts, and next steps — no action needed from you.',
+              'When your snapshot is ready, this space fills in automatically. '
+              'You can set up details anytime.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
                 color: BillyTheme.gray500,
-                height: 1.5,
+                height: 1.45,
               ),
             ),
             const SizedBox(height: 22),

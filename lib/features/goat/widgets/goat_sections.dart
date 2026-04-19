@@ -96,18 +96,18 @@ class GoatHeroCard extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.auto_awesome_rounded,
+                      const Icon(Icons.auto_awesome_rounded,
                           size: 12, color: Colors.white),
-                      SizedBox(width: 6),
+                      const SizedBox(width: 6),
                       Text(
-                        'MONTHLY DEEP ANALYSIS',
+                        'Snapshot',
                         style: TextStyle(
                           fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                          color: Colors.white.withValues(alpha: 0.95),
                         ),
                       ),
                     ],
@@ -130,23 +130,25 @@ class GoatHeroCard extends StatelessWidget {
                   ? "Here's what matters right now"
                   : 'Your financial snapshot',
               style: const TextStyle(
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
-                letterSpacing: -0.4,
+                letterSpacing: -0.35,
                 height: 1.15,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               hasNarrative
                   ? narrative
                   : _deterministicHeadline(snapshot),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: Colors.white.withValues(alpha: 0.92),
-                height: 1.45,
+                color: Colors.white.withValues(alpha: 0.9),
+                height: 1.4,
               ),
             ),
             if (previous != null && previous!.id != snapshot.id) ...[
@@ -169,8 +171,8 @@ class GoatHeroCard extends StatelessWidget {
     final improved = diffPct > 0;
     final same = diffPct == 0;
     final label = same
-        ? 'Coverage unchanged from last run'
-        : '${improved ? '+' : ''}$diffPct% coverage vs last run';
+        ? 'Coverage steady'
+        : '${improved ? '+' : ''}$diffPct% vs last run';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -221,9 +223,9 @@ class GoatHeroCard extends StatelessWidget {
           : '$openRecs priorities to review');
     }
     if (bits.isEmpty) {
-      return 'Billy scanned your transactions, budgets, and goals. Scroll for priorities, forecasts, and insights.';
+      return 'Numbers update each run — check the tabs below for details.';
     }
-    return '${bits.join(' · ')}. Scroll for the full picture.';
+    return bits.join(' · ');
   }
 }
 
@@ -264,8 +266,9 @@ class GoatScoreRow extends StatelessWidget {
               icon: Icons.donut_small_rounded,
               title: 'Coverage',
               primary: '${(snapshot.coverage.score * 100).round()}%',
-              secondary:
-                  '${snapshot.coverage.breakdown.length} pillars tracked',
+              secondary: snapshot.coverage.score >= 0.72
+                  ? 'Strong signal'
+                  : 'Add more data',
               fraction: snapshot.coverage.score.clamp(0, 1),
               tintBg: const Color(0xFFEFF6FF),
               tintFg: const Color(0xFF1D4ED8),
@@ -275,11 +278,9 @@ class GoatScoreRow extends StatelessWidget {
           Expanded(
             child: _StatCard(
               icon: Icons.flag_rounded,
-              title: 'Open items',
-              primary: openRecs == 0 ? 'All clear' : openRecs.toString(),
-              secondary: openRecs == 0
-                  ? 'No priorities'
-                  : 'Recommendations to review',
+              title: 'Queue',
+              primary: openRecs == 0 ? '0' : openRecs.toString(),
+              secondary: openRecs == 0 ? 'Inbox clear' : 'To review',
               fraction: null,
               tintBg: const Color(0xFFFEF3C7),
               tintFg: const Color(0xFFB45309),
@@ -293,13 +294,13 @@ class GoatScoreRow extends StatelessWidget {
   String _readinessSubtitle(GoatReadiness r) {
     switch (r) {
       case GoatReadiness.l1:
-        return 'Add a few inputs to unlock more';
+        return 'Starter depth';
       case GoatReadiness.l2:
-        return 'Confident insights';
+        return 'Solid depth';
       case GoatReadiness.l3:
-        return 'Highest fidelity';
+        return 'Full depth';
       case GoatReadiness.unknown:
-        return '-';
+        return '—';
     }
   }
 }
@@ -345,11 +346,11 @@ class _StatCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            title.toUpperCase(),
+            title,
             style: const TextStyle(
               fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.15,
               color: BillyTheme.gray400,
             ),
           ),
@@ -435,10 +436,9 @@ class GoatPrioritySection extends StatelessWidget {
     final more = sorted.length - visible.length;
 
     return _SectionShell(
-      kicker: 'MOST IMPORTANT RIGHT NOW',
-      title: 'Your top priorities',
-      subtitle:
-          'Ranked by urgency and impact. Tap dismiss on items you\'ve handled.',
+      kicker: 'Priorities',
+      title: 'Start here',
+      subtitle: 'Dismiss when you\'ve handled an item.',
       child: Column(
         children: [
           for (final rec in visible)
@@ -452,13 +452,14 @@ class GoatPrioritySection extends StatelessWidget {
             ),
           if (more > 0)
             Padding(
-              padding: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.only(top: 6, left: 4),
               child: Text(
-                '$more more similar items grouped behind the scenes',
+                '+$more similar · grouped',
                 style: const TextStyle(
-                    fontSize: 12,
-                    color: BillyTheme.gray500,
-                    fontWeight: FontWeight.w600),
+                  fontSize: 11,
+                  color: BillyTheme.gray400,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
         ],
@@ -532,11 +533,11 @@ class _PriorityCard extends StatelessWidget {
                   border: Border.all(color: colors.border),
                 ),
                 child: Text(
-                  rec.severity.label.toUpperCase(),
+                  rec.severity.label,
                   style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
                     color: colors.fg,
                   ),
                 ),
@@ -547,10 +548,12 @@ class _PriorityCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               body,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 13,
                 color: BillyTheme.gray600,
-                height: 1.45,
+                height: 1.4,
               ),
             ),
           ],
@@ -651,10 +654,9 @@ class GoatInsightsSection extends StatelessWidget {
     }
     if (cleaned.isEmpty) return const SizedBox.shrink();
     return _SectionShell(
-      kicker: 'KEY INSIGHTS',
-      title: 'What the numbers are telling us',
-      subtitle:
-          'Grounded observations from your data, explained in plain English.',
+      kicker: 'Insights',
+      title: 'Plain-English read',
+      subtitle: 'Grounded in your latest numbers.',
       child: Column(
         children: [
           for (final p in cleaned.take(6))
@@ -694,11 +696,11 @@ class _InsightCard extends StatelessWidget {
                   border: Border.all(color: BillyTheme.emerald100),
                 ),
                 child: Text(
-                  _pillarLabel(pillar.pillar).toUpperCase(),
+                  _pillarLabel(pillar.pillar),
                   style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
                     color: BillyTheme.emerald700,
                   ),
                 ),
@@ -710,11 +712,13 @@ class _InsightCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             pillar.observation,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
               color: BillyTheme.gray800,
-              height: 1.4,
+              height: 1.35,
               letterSpacing: -0.1,
             ),
           ),
@@ -722,10 +726,12 @@ class _InsightCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               pillar.inference,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 color: BillyTheme.gray500,
-                height: 1.5,
+                height: 1.45,
               ),
             ),
           ],
@@ -736,19 +742,26 @@ class _InsightCard extends StatelessWidget {
 
   Widget _confidenceChip(String bucket) {
     final label = switch (bucket) {
-      'high' => 'High confidence',
-      'medium' => 'Medium confidence',
-      'low' => 'Low confidence',
-      'very_low' => 'Very low confidence',
-      _ => 'Confidence unknown',
+      'high' => 'High',
+      'medium' => 'Med',
+      'low' => 'Low',
+      'very_low' => 'Low+',
+      _ => '—',
     };
-    return Text(
-      label,
-      style: const TextStyle(
-        fontSize: 10,
-        fontWeight: FontWeight.w700,
-        color: BillyTheme.gray400,
-        letterSpacing: 0.3,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: BillyTheme.gray50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: BillyTheme.gray100),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: BillyTheme.gray500,
+        ),
       ),
     );
   }
@@ -798,10 +811,9 @@ class GoatForecastSection extends StatelessWidget {
         maxHorizon > 0 ? 'the next $maxHorizon days' : 'the coming period';
 
     return _SectionShell(
-      kicker: 'FORECAST',
-      title: 'Where spending is heading',
-      subtitle:
-          'Projected ranges for $horizonLabel — use the band as a planning range, not a promise.',
+      kicker: 'Outlook',
+      title: 'Forward view',
+      subtitle: 'Bands are guides for $horizonLabel — not guarantees.',
       child: Column(
         children: [
           for (final f in forecasts.take(4))
@@ -1001,60 +1013,84 @@ class GoatMetricHighlights extends StatelessWidget {
     if (chips.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'AT A GLANCE',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: BillyTheme.gray400,
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.speed_rounded, size: 16, color: BillyTheme.gray400),
+                SizedBox(width: 6),
+                Text(
+                  'Key figures',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: BillyTheme.gray600,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final c in chips)
-                Container(
+          SizedBox(
+            height: 86,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              itemCount: chips.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, i) {
+                final c = chips[i];
+                return Container(
+                  width: 118,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: BillyTheme.gray100),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        c.label.toUpperCase(),
+                        c.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
                           color: BillyTheme.gray400,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         c.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 15,
+                          fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: BillyTheme.gray800,
-                          letterSpacing: -0.2,
+                          letterSpacing: -0.35,
                         ),
                       ),
                     ],
                   ),
-                ),
-            ],
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1107,9 +1143,9 @@ class GoatWatchoutsSection extends StatelessWidget {
     final extra = anomalies.length > 6 ? anomalies.length - 6 : 0;
 
     return _SectionShell(
-      kicker: 'WATCHOUTS',
-      title: 'Things to keep an eye on',
-      subtitle: 'Flags from the risk model and anomaly scanner.',
+      kicker: 'Alerts',
+      title: 'Watch closely',
+      subtitle: 'Risk + unusual patterns.',
       child: Column(
         children: [
           for (final r in risks)
@@ -1134,12 +1170,12 @@ class GoatWatchoutsSection extends StatelessWidget {
             ),
           if (extra > 0)
             Padding(
-              padding: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.only(top: 6, left: 4),
               child: Text(
-                '$extra more similar flag(s) grouped behind the scenes',
+                '+$extra similar · grouped',
                 style: const TextStyle(
-                  fontSize: 12,
-                  color: BillyTheme.gray500,
+                  fontSize: 11,
+                  color: BillyTheme.gray400,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1286,9 +1322,9 @@ class GoatCoachingSection extends StatelessWidget {
     final coaching = snapshot.ai.coaching.take(4).toList(growable: false);
     if (coaching.isEmpty) return const SizedBox.shrink();
     return _SectionShell(
-      kicker: 'NEXT MOVES',
-      title: 'Opportunities worth acting on',
-      subtitle: 'Small, specific changes that compound over time.',
+      kicker: 'Ideas',
+      title: 'Next moves',
+      subtitle: null,
       child: Column(
         children: [
           for (final c in coaching)
@@ -1376,9 +1412,9 @@ class GoatMissingInputsSection extends StatelessWidget {
         .toList(growable: false);
     if (items.isEmpty) return const SizedBox.shrink();
     return _SectionShell(
-      kicker: 'UNLOCK MORE',
-      title: 'Add these to sharpen future analyses',
-      subtitle: 'Each item unlocks a specific layer of insight.',
+      kicker: 'Setup',
+      title: 'Unlock more depth',
+      subtitle: 'Optional fields that improve the next run.',
       child: Column(
         children: [
           for (final m in items)
@@ -1457,25 +1493,75 @@ class GoatFooterMeta extends StatelessWidget {
   final GoatSnapshot snapshot;
   @override
   Widget build(BuildContext context) {
-    final parts = <String>[
+    final chips = <Widget>[
       if (snapshot.generatedAt != null)
-        'Generated ${_relativeTime(snapshot.generatedAt)}',
-      'Scope: ${snapshot.scope}',
-      if (snapshot.isPartial) 'Partial snapshot',
-      footerAiStatusLabel(snapshot.ai),
+        _MetaChip(
+          icon: Icons.schedule_rounded,
+          label: _relativeTime(snapshot.generatedAt),
+        ),
+      _MetaChip(
+        icon: Icons.layers_rounded,
+        label: snapshot.scope,
+      ),
+      if (snapshot.isPartial)
+        const _MetaChip(
+          icon: Icons.warning_amber_rounded,
+          label: 'Partial',
+          emphasis: true,
+        ),
+      _MetaChip(
+        icon: Icons.smart_toy_outlined,
+        label: footerAiStatusLabel(snapshot.ai),
+      ),
     ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-      child: Center(
-        child: Text(
-          parts.join(' · '),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 11,
-            color: BillyTheme.gray400,
-            fontWeight: FontWeight.w600,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: chips,
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({
+    required this.icon,
+    required this.label,
+    this.emphasis = false,
+  });
+  final IconData icon;
+  final String label;
+  final bool emphasis;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = emphasis ? const Color(0xFFB45309) : BillyTheme.gray500;
+    final bg = emphasis ? const Color(0xFFFFFBEB) : BillyTheme.gray50;
+    final bd = emphasis ? const Color(0xFFFDE68A) : BillyTheme.gray100;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: bd),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1487,17 +1573,18 @@ class _SectionShell extends StatelessWidget {
   const _SectionShell({
     required this.kicker,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.child,
   });
   final String kicker;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final Widget child;
   @override
   Widget build(BuildContext context) {
+    final sub = subtitle;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1505,8 +1592,8 @@ class _SectionShell extends StatelessWidget {
             kicker,
             style: const TextStyle(
               fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
               color: BillyTheme.gray400,
             ),
           ),
@@ -1514,22 +1601,25 @@ class _SectionShell extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
               color: BillyTheme.gray800,
-              letterSpacing: -0.4,
+              letterSpacing: -0.35,
+              height: 1.2,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 12.5,
-              color: BillyTheme.gray500,
-              height: 1.45,
+          if (sub != null && sub.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              sub,
+              style: const TextStyle(
+                fontSize: 12,
+                color: BillyTheme.gray500,
+                height: 1.35,
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
+          ],
+          const SizedBox(height: 12),
           child,
         ],
       ),

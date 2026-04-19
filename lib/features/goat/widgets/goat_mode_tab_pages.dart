@@ -86,10 +86,8 @@ class GoatActionsTab extends StatelessWidget {
               snapshot.coverage.unlockableScopes.isEmpty)
             const _TabEmpty(
               icon: Icons.check_circle_outline_rounded,
-              title: 'Nothing urgent here',
-              body:
-                  'When the backend surfaces new recommendations or missing inputs, '
-                  'they will show up in this tab.',
+              title: 'All quiet',
+              body: 'New items appear here after the next analysis run.',
             ),
         ],
       ),
@@ -121,23 +119,23 @@ class _UnlockableScopesCard extends StatelessWidget {
                 Icon(Icons.lock_open_rounded,
                     size: 18, color: BillyTheme.emerald700),
                 const SizedBox(width: 8),
-                const Text(
-                  'More analysis available',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: BillyTheme.gray800,
-                  ),
-                ),
+            const Text(
+              'Can unlock',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: BillyTheme.gray800,
+              ),
+            ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
-              'Add the missing inputs from the card above and the next run can unlock:',
+              'After you add missing details, the next analysis can include:',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11.5,
                 color: BillyTheme.gray500,
-                height: 1.35,
+                height: 1.3,
               ),
             ),
             const SizedBox(height: 10),
@@ -194,10 +192,8 @@ class GoatTrendsTab extends StatelessWidget {
           else
             const _TabEmpty(
               icon: Icons.show_chart_rounded,
-              title: 'No forecasts in this snapshot',
-              body:
-                  'Forecasts need enough history. After more transactions accrue, '
-                  're-run the Docker backend and check again.',
+              title: 'No forecasts yet',
+              body: 'More history usually unlocks this view.',
             ),
         ],
       ),
@@ -238,10 +234,8 @@ class GoatSafetyTab extends StatelessWidget {
           else
             const _TabEmpty(
               icon: Icons.shield_outlined,
-              title: 'No watchouts right now',
-              body:
-                  'Risk scores and anomalies look calm for this run. '
-                  'Keep logging expenses so the next analysis stays accurate.',
+              title: 'Looks steady',
+              body: 'No risk or anomaly flags for this run.',
             ),
         ],
       ),
@@ -292,10 +286,12 @@ class GoatRunLogTab extends ConsumerWidget {
         ),
         padding: const EdgeInsets.only(bottom: 32),
         children: [
-          if (snapshot.recommendationCountsBySeverity.isNotEmpty)
-            _RecSeverityCard(counts: snapshot.recommendationCountsBySeverity),
-          if (snapshot.recommendationCountsByKind.isNotEmpty)
-            _RecKindCard(counts: snapshot.recommendationCountsByKind),
+          if (snapshot.recommendationCountsBySeverity.isNotEmpty ||
+              snapshot.recommendationCountsByKind.isNotEmpty)
+            _RunSummaryCard(
+              bySeverity: snapshot.recommendationCountsBySeverity,
+              byKind: snapshot.recommendationCountsByKind,
+            ),
           if (snapshot.layerErrors.isNotEmpty)
             _LayerErrorsCard(errors: snapshot.layerErrors),
           GoatFooterMeta(snapshot: snapshot),
@@ -313,13 +309,20 @@ class GoatRunLogTab extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Recent backend runs',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: BillyTheme.gray800,
-                      ),
+                    const Row(
+                      children: [
+                        Icon(Icons.history_rounded,
+                            size: 18, color: BillyTheme.gray500),
+                        SizedBox(width: 8),
+                        Text(
+                          'Past runs',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: BillyTheme.gray800,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     ...jobs.map((j) => _JobTile(job: j)),
@@ -334,50 +337,81 @@ class GoatRunLogTab extends ConsumerWidget {
   }
 }
 
-class _RecSeverityCard extends StatelessWidget {
-  const _RecSeverityCard({required this.counts});
-  final Map<String, int> counts;
+class _RunSummaryCard extends StatelessWidget {
+  const _RunSummaryCard({
+    required this.bySeverity,
+    required this.byKind,
+  });
+
+  final Map<String, int> bySeverity;
+  final Map<String, int> byKind;
+
+  static String _shortKind(String k) {
+    if (k.length <= 14) return k.replaceAll('_', ' ');
+    return '${k.replaceAll('_', ' ').substring(0, 12)}…';
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: BillyTheme.gray100),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Recommendations by severity',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: BillyTheme.gray800,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
+            const Row(
               children: [
-                for (final e in counts.entries)
-                  if (e.value > 0)
-                    Text(
-                      '${e.key}: ${e.value}',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: BillyTheme.gray600,
-                      ),
-                    ),
+                Icon(Icons.pie_chart_outline_rounded,
+                    size: 18, color: BillyTheme.gray500),
+                SizedBox(width: 8),
+                Text(
+                  'This run',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: BillyTheme.gray800,
+                  ),
+                ),
               ],
             ),
+            if (bySeverity.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final e in bySeverity.entries)
+                    if (e.value > 0)
+                      _StatPill(label: e.key, value: e.value),
+                ],
+              ),
+            ],
+            if (byKind.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final e in byKind.entries)
+                    if (e.value > 0)
+                      _StatPill(label: _shortKind(e.key), value: e.value),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -385,52 +419,41 @@ class _RecSeverityCard extends StatelessWidget {
   }
 }
 
-class _RecKindCard extends StatelessWidget {
-  const _RecKindCard({required this.counts});
-  final Map<String, int> counts;
+class _StatPill extends StatelessWidget {
+  const _StatPill({required this.label, required this.value});
+  final String label;
+  final int value;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: BillyTheme.gray100),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Recommendations by kind',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: BillyTheme.gray800,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: BillyTheme.gray50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: BillyTheme.gray100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: BillyTheme.gray600,
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final e in counts.entries)
-                  if (e.value > 0)
-                    Text(
-                      '${e.key}: ${e.value}',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: BillyTheme.gray600,
-                      ),
-                    ),
-              ],
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$value',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: BillyTheme.gray800,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -461,9 +484,9 @@ class _LayerErrorsCard extends StatelessWidget {
                     size: 18, color: Colors.amber.shade800),
                 const SizedBox(width: 8),
                 const Text(
-                  'Layer notes (partial run)',
+                  'Heads up',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
                     color: BillyTheme.gray800,
                   ),
@@ -473,13 +496,15 @@ class _LayerErrorsCard extends StatelessWidget {
             const SizedBox(height: 8),
             for (final e in errors.entries)
               Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   '${e.key}: ${e.value}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 11,
                     color: BillyTheme.gray700,
-                    height: 1.35,
+                    height: 1.3,
                   ),
                 ),
               ),
@@ -589,15 +614,16 @@ class _TabEmpty extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Icon(icon, size: 40, color: BillyTheme.gray300),
-            const SizedBox(height: 12),
+            Icon(icon, size: 48, color: BillyTheme.gray200),
+            const SizedBox(height: 14),
             Text(
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 15,
+                fontSize: 17,
                 fontWeight: FontWeight.w800,
                 color: BillyTheme.gray800,
+                letterSpacing: -0.2,
               ),
             ),
             const SizedBox(height: 8),
@@ -607,7 +633,7 @@ class _TabEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 color: BillyTheme.gray500,
-                height: 1.45,
+                height: 1.4,
               ),
             ),
           ],
